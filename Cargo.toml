@@ -20,6 +20,10 @@ members = [
     "crates/semtree_cli",
     "crates/semtree_ai",
     "crates/semtree_bench",
+    "crates/semtree_wasm",
+]
+exclude = [
+    "bindings/python",
 ]
 resolver = "3"
 

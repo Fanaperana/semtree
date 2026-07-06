@@ -1,0 +1,22 @@
+[package]
+name = "semtree_wasm"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+semtree_core.workspace = true
+semtree_red.workspace = true
+semtree_green.workspace = true
+semtree_grammar.workspace = true
+semtree_runtime.workspace = true
+semtree_query.workspace = true
+semtree_semantic.workspace = true
+wasm-bindgen = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde-wasm-bindgen = "0.6"
+smol_str.workspace = true
+text-size.workspace = true

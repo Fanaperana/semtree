@@ -1,0 +1,21 @@
+[package]
+name = "py-semtree"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "semtree"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.25", features = ["extension-module"] }
+semtree_core = { path = "../../crates/semtree_core" }
+semtree_red = { path = "../../crates/semtree_red" }
+semtree_green = { path = "../../crates/semtree_green" }
+semtree_grammar = { path = "../../crates/semtree_grammar" }
+semtree_runtime = { path = "../../crates/semtree_runtime" }
+semtree_query = { path = "../../crates/semtree_query" }
+semtree_semantic = { path = "../../crates/semtree_semantic" }
+serde_json = "1"
+smol_str = "0.3"
+text-size = "1.1"
