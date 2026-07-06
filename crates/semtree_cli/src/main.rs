@@ -106,6 +106,32 @@ enum Commands {
 
     /// Run diagnostics on the SemTree installation
     Doctor,
+
+    /// Generate typed AST code from a grammar file
+    Generate {
+        /// Grammar file (.semtree)
+        file: PathBuf,
+
+        /// Output file for generated code
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+
+    /// Run grammar test suites (parse all test files and verify lossless roundtrip)
+    Test {
+        /// Directory containing test source files
+        dir: PathBuf,
+    },
+
+    /// Migrate a Tree-sitter grammar (import + validate)
+    Migrate {
+        /// Path to grammar.json (tree-sitter compiled grammar)
+        file: PathBuf,
+
+        /// Output path for SemTree grammar
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
 }
 
 fn main() {
@@ -127,6 +153,9 @@ fn main() {
         Commands::Benchmark { file, iterations } => commands::benchmark(file, iterations),
         Commands::Import { file, output } => commands::import(file, output),
         Commands::Doctor => commands::doctor(),
+        Commands::Generate { file, output } => commands::generate(file, output),
+        Commands::Test { dir } => commands::test(dir),
+        Commands::Migrate { file, output } => commands::migrate(file, output),
     };
 
     if let Err(e) = result {

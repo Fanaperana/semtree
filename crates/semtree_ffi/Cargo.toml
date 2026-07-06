@@ -1,0 +1,16 @@
+[package]
+name = "semtree_ffi"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+semtree_core.workspace = true
+semtree_red.workspace = true
+semtree_green.workspace = true
+semtree_parser.workspace = true
+semtree_semantic.workspace = true
+smol_str.workspace = true
+text-size.workspace = true

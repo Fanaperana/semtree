@@ -13,7 +13,12 @@ members = [
     "crates/semtree_format",
     "crates/semtree_lint",
     "crates/semtree_ts_import",
+    "crates/semtree_plugin",
+    "crates/semtree_ffi",
+    "crates/semtree_ide",
+    "crates/semtree_refactor",
     "crates/semtree_cli",
+    "crates/semtree_ai",
 ]
 resolver = "3"
 
@@ -37,7 +42,12 @@ semtree_semantic = { path = "crates/semtree_semantic" }
 semtree_format = { path = "crates/semtree_format" }
 semtree_lint = { path = "crates/semtree_lint" }
 semtree_ts_import = { path = "crates/semtree_ts_import" }
+semtree_ide = { path = "crates/semtree_ide" }
+semtree_refactor = { path = "crates/semtree_refactor" }
+semtree_plugin = { path = "crates/semtree_plugin" }
+semtree_ffi = { path = "crates/semtree_ffi" }
 semtree_cli = { path = "crates/semtree_cli" }
+semtree_ai = { path = "crates/semtree_ai" }
 
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

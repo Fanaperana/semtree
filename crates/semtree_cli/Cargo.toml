@@ -21,5 +21,7 @@ semtree_semantic.workspace = true
 semtree_format.workspace = true
 semtree_lint.workspace = true
 semtree_ts_import.workspace = true
+semtree_ide.workspace = true
+semtree_refactor.workspace = true
 clap.workspace = true
 serde_json.workspace = true

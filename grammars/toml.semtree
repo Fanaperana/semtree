@@ -1,0 +1,44 @@
+language toml
+
+keyword true
+keyword false
+
+# A TOML document is a sequence of key-value pairs and tables.
+Document :=
+    Entry*
+
+Entry :=
+    Table | KeyValue
+
+Table :=
+    "[" Key "]"
+
+KeyValue :=
+    Key "=" Value
+
+Key :=
+    Identifier | String
+
+Value :=
+    String | Integer | Float | Boolean | Array | InlineTable
+
+Boolean :=
+    "true" | "false"
+
+Array :=
+    "[" ValueList? "]"
+
+ValueList :=
+    Value ValueTail*
+
+ValueTail :=
+    "," Value
+
+InlineTable :=
+    "{" PairList? "}"
+
+PairList :=
+    KeyValue PairTail*
+
+PairTail :=
+    "," KeyValue

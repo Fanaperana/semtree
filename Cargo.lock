@@ -213,6 +213,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b1e7f9a428571be2dc5bc0505c13fb6bf936822b894ec87abf8a08a4e51742d"
 
 [[package]]
+name = "semtree_ai"
+version = "0.1.0"
+dependencies = [
+ "semtree_core",
+ "semtree_green",
+ "semtree_parser",
+ "semtree_query",
+ "semtree_red",
+ "semtree_semantic",
+ "serde",
+ "serde_json",
+ "smol_str",
+ "text-size",
+]
+
+[[package]]
 name = "semtree_ast"
 version = "0.1.0"
 dependencies = [
@@ -236,11 +252,13 @@ dependencies = [
  "semtree_format",
  "semtree_grammar",
  "semtree_green",
+ "semtree_ide",
  "semtree_lexer",
  "semtree_lint",
  "semtree_parser",
  "semtree_query",
  "semtree_red",
+ "semtree_refactor",
  "semtree_runtime",
  "semtree_semantic",
  "semtree_ts_import",
@@ -253,6 +271,19 @@ version = "0.1.0"
 dependencies = [
  "rustc-hash",
  "serde",
+ "smol_str",
+ "text-size",
+]
+
+[[package]]
+name = "semtree_ffi"
+version = "0.1.0"
+dependencies = [
+ "semtree_core",
+ "semtree_green",
+ "semtree_parser",
+ "semtree_red",
+ "semtree_semantic",
  "smol_str",
  "text-size",
 ]
@@ -287,6 +318,21 @@ version = "0.1.0"
 dependencies = [
  "rustc-hash",
  "semtree_core",
+ "smol_str",
+ "text-size",
+]
+
+[[package]]
+name = "semtree_ide"
+version = "0.1.0"
+dependencies = [
+ "semtree_core",
+ "semtree_format",
+ "semtree_green",
+ "semtree_lint",
+ "semtree_parser",
+ "semtree_red",
+ "semtree_semantic",
  "smol_str",
  "text-size",
 ]
@@ -328,6 +374,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "semtree_plugin"
+version = "0.1.0"
+dependencies = [
+ "semtree_core",
+ "semtree_grammar",
+ "semtree_green",
+ "semtree_red",
+ "semtree_semantic",
+ "smol_str",
+ "text-size",
+]
+
+[[package]]
 name = "semtree_query"
 version = "0.1.0"
 dependencies = [
@@ -345,6 +404,19 @@ version = "0.1.0"
 dependencies = [
  "semtree_core",
  "semtree_green",
+ "smol_str",
+ "text-size",
+]
+
+[[package]]
+name = "semtree_refactor"
+version = "0.1.0"
+dependencies = [
+ "semtree_core",
+ "semtree_green",
+ "semtree_parser",
+ "semtree_red",
+ "semtree_semantic",
  "smol_str",
  "text-size",
 ]

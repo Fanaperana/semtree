@@ -35,7 +35,7 @@ impl Grammar {
 }
 
 /// A named production rule in the grammar.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Rule {
     pub name: SmolStr,
     pub expr: RuleExpr,
@@ -43,14 +43,14 @@ pub struct Rule {
 }
 
 /// A field binding within a rule.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FieldDef {
     pub name: SmolStr,
     pub rule: SmolStr,
 }
 
 /// The expression types that make up grammar rules.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum RuleExpr {
     /// A literal string: `"fn"`
     Literal(SmolStr),
@@ -90,12 +90,15 @@ pub enum FormatHint {
     SpaceAfter(SmolStr),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum GrammarError {
     UndefinedRule(SmolStr),
     DuplicateRule(SmolStr),
     EmptyRule(SmolStr),
     ParseError(String),
+    CycleDetected(Vec<SmolStr>),
+    UnreachableRule(SmolStr),
+    EmptyAlternative(SmolStr),
 }
 
 impl std::fmt::Display for GrammarError {
@@ -105,6 +108,14 @@ impl std::fmt::Display for GrammarError {
             GrammarError::DuplicateRule(name) => write!(f, "duplicate rule: {name}"),
             GrammarError::EmptyRule(name) => write!(f, "empty rule: {name}"),
             GrammarError::ParseError(msg) => write!(f, "parse error: {msg}"),
+            GrammarError::CycleDetected(cycle) => {
+                let path: Vec<&str> = cycle.iter().map(|s| s.as_str()).collect();
+                write!(f, "cycle detected: {}", path.join(" -> "))
+            }
+            GrammarError::UnreachableRule(name) => write!(f, "unreachable rule: {name}"),
+            GrammarError::EmptyAlternative(name) => {
+                write!(f, "empty alternative (Blank in Choice) in rule: {name}")
+            }
         }
     }
 }

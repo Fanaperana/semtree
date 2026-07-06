@@ -1,0 +1,8 @@
+{
+  "name": "semtree",
+  "version": 1,
+  "active": true,
+  "tags": ["rust", "parser"],
+  "config": null,
+  "score": 3.14
+}

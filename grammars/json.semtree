@@ -1,0 +1,42 @@
+language json
+
+keyword true
+keyword false
+keyword null
+
+# A JSON document is a single value.
+Document :=
+    Value
+
+Value :=
+    Object | Array | String | Number | Boolean | Null
+
+Object :=
+    "{" PairList? "}"
+
+PairList :=
+    Pair PairTail*
+
+PairTail :=
+    "," Pair
+
+Pair :=
+    String ":" Value
+
+Array :=
+    "[" ValueList? "]"
+
+ValueList :=
+    Value ValueTail*
+
+ValueTail :=
+    "," Value
+
+Number :=
+    Integer | Float
+
+Boolean :=
+    "true" | "false"
+
+Null :=
+    "null"

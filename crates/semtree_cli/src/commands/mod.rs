@@ -9,6 +9,9 @@ mod symbols;
 mod benchmark;
 mod import;
 mod doctor;
+mod generate;
+mod test;
+mod migrate;
 
 pub use init::init;
 pub use parse::parse;
@@ -21,5 +24,8 @@ pub use symbols::symbols;
 pub use benchmark::benchmark;
 pub use import::import;
 pub use doctor::doctor;
+pub use generate::generate;
+pub use test::test;
+pub use migrate::migrate;
 
 pub type Result = std::result::Result<(), Box<dyn std::error::Error>>;

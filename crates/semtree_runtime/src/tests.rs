@@ -339,6 +339,92 @@ fn fuzz_null_bytes() {
     let _root = result.syntax();
 }
 
+// ── JSON Grammar Integration ────────────────────────────────
+
+fn json_grammar() -> semtree_grammar::Grammar {
+    let dsl = include_str!("../../../grammars/json.semtree");
+    parse_semtree_dsl(dsl).expect("JSON grammar should parse")
+}
+
+#[test]
+fn json_grammar_loads() {
+    let grammar = json_grammar();
+    assert_eq!(grammar.name.as_str(), "json");
+    assert!(grammar.rules.contains_key("Document"));
+    assert!(grammar.rules.contains_key("Value"));
+    assert!(grammar.rules.contains_key("Object"));
+    assert!(grammar.rules.contains_key("Array"));
+    assert!(grammar.rules.contains_key("Pair"));
+}
+
+#[test]
+fn json_parse_roundtrip() {
+    let grammar = json_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let source = include_str!("../../../grammars/tests/test.json");
+    let result = parser.parse(source);
+    let root = result.syntax();
+    assert_eq!(root.text(), source);
+}
+
+#[test]
+fn json_parse_simple_object() {
+    let grammar = json_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let source = r#"{"key": "value"}"#;
+    let result = parser.parse(source);
+    let root = result.syntax();
+    assert_eq!(root.text(), source);
+}
+
+#[test]
+fn json_parse_array() {
+    let grammar = json_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let source = r#"[1, 2, 3]"#;
+    let result = parser.parse(source);
+    let root = result.syntax();
+    assert_eq!(root.text(), source);
+}
+
+// ── TOML Grammar Integration ────────────────────────────────
+
+fn toml_grammar() -> semtree_grammar::Grammar {
+    let dsl = include_str!("../../../grammars/toml.semtree");
+    parse_semtree_dsl(dsl).expect("TOML grammar should parse")
+}
+
+#[test]
+fn toml_grammar_loads() {
+    let grammar = toml_grammar();
+    assert_eq!(grammar.name.as_str(), "toml");
+    assert!(grammar.rules.contains_key("Document"));
+    assert!(grammar.rules.contains_key("Table"));
+    assert!(grammar.rules.contains_key("KeyValue"));
+    assert!(grammar.rules.contains_key("Key"));
+    assert!(grammar.rules.contains_key("Value"));
+}
+
+#[test]
+fn toml_parse_roundtrip() {
+    let grammar = toml_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let source = include_str!("../../../grammars/tests/test.toml");
+    let result = parser.parse(source);
+    let root = result.syntax();
+    assert_eq!(root.text(), source);
+}
+
+#[test]
+fn toml_parse_simple_kv() {
+    let grammar = toml_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let source = "name = \"test\"";
+    let result = parser.parse(source);
+    let root = result.syntax();
+    assert_eq!(root.text(), source);
+}
+
 // ── Tree-sitter Import Integration ──────────────────────────
 
 #[test]

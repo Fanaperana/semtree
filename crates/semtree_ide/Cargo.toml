@@ -1,0 +1,17 @@
+[package]
+name = "semtree_ide"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+semtree_core.workspace = true
+semtree_red.workspace = true
+semtree_green.workspace = true
+semtree_semantic.workspace = true
+semtree_format.workspace = true
+semtree_lint.workspace = true
+smol_str.workspace = true
+text-size.workspace = true
+
+[dev-dependencies]
+semtree_parser.workspace = true

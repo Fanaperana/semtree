@@ -1,5 +1,4 @@
 use semtree_grammar::Grammar;
-use smol_str::SmolStr;
 
 /// Generate Rust source code for typed AST wrappers from a Grammar IR.
 ///
@@ -109,4 +108,80 @@ fn is_terminal(name: &str) -> bool {
         name,
         "Identifier" | "identifier" | "Integer" | "integer" | "String" | "string" | "Float" | "float"
     )
+}
+
+/// Generate a Visitor trait from a Grammar IR.
+///
+/// Produces a trait with `visit_*` methods for each rule, plus a default
+/// `walk` implementation that traverses children.
+pub fn generate_visitor(grammar: &Grammar) -> String {
+    let mut out = String::new();
+    out.push_str("// Auto-generated visitor by semtree_ast::codegen.\n\n");
+
+    // Visitor trait
+    out.push_str("pub trait Visitor {\n");
+    for name in grammar.rules.keys() {
+        let fn_name = to_snake_case(name);
+        let type_name = to_pascal_case(name);
+        out.push_str(&format!(
+            "    fn visit_{fn_name}(&mut self, node: &{type_name}) {{\n\
+             \x20       self.walk_{fn_name}(node);\n\
+             \x20   }}\n\n"
+        ));
+    }
+    out.push_str("    // Walk methods (default traversal)\n");
+    for (name, rule) in &grammar.rules {
+        let fn_name = to_snake_case(name);
+        let type_name = to_pascal_case(name);
+        out.push_str(&format!(
+            "    fn walk_{fn_name}(&mut self, node: &{type_name}) {{\n"
+        ));
+        for field in &rule.fields {
+            let field_fn = to_snake_case(&field.name);
+            let field_visit = to_snake_case(&field.rule);
+            if !is_terminal(&field.rule) {
+                out.push_str(&format!(
+                    "        if let Some(child) = node.{field_fn}() {{\n\
+                     \x20           self.visit_{field_visit}(&child);\n\
+                     \x20       }}\n"
+                ));
+            }
+        }
+        out.push_str("    }\n\n");
+    }
+    out.push_str("}\n\n");
+
+    // Rewriter trait
+    out.push_str("pub trait Rewriter {\n");
+    out.push_str("    fn rewrite_node(&mut self, node: &semtree_red::SyntaxNode) -> Option<String>;\n");
+    out.push_str("}\n");
+
+    out
+}
+
+/// Generate a CLI-friendly grammar summary.
+pub fn grammar_summary(grammar: &Grammar) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("Language: {}\n", grammar.name));
+    out.push_str(&format!("Rules: {}\n", grammar.rules.len()));
+    out.push_str(&format!("Keywords: {}\n", grammar.keywords.len()));
+    out.push_str(&format!("Format hints: {}\n\n", grammar.format_hints.len()));
+
+    out.push_str("Rules:\n");
+    for (name, rule) in &grammar.rules {
+        let fields: Vec<_> = rule.fields.iter().map(|f| format!("{}: {}", f.name, f.rule)).collect();
+        if fields.is_empty() {
+            out.push_str(&format!("  {name}\n"));
+        } else {
+            out.push_str(&format!("  {name} ({})\n", fields.join(", ")));
+        }
+    }
+
+    if !grammar.keywords.is_empty() {
+        out.push_str("\nKeywords: ");
+        out.push_str(&grammar.keywords.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(", "));
+        out.push('\n');
+    }
+
+    out
 }
