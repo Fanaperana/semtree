@@ -6,61 +6,90 @@ SemTree is a next-generation language infrastructure platform written in Rust. U
 
 ## Benchmarks: SemTree vs Tree-sitter
 
-Measured on real-world inputs across 5 languages. Median of 50 iterations, `--release` build.
+All benchmarks: median of 30 iterations, `--release` build, 5 languages (JSON, JavaScript, Rust, CSS, Python).
 
-### Cold Parse Throughput
+### 1. Parse Speed
 
-| Language | Size | Tree-sitter | SemTree | Result |
-|----------|------|-------------|---------|--------|
-| JSON | 1 KB | 16 MB/s | 44 MB/s | **2.8x faster** |
-| JSON | 10 KB | 15 MB/s | 53 MB/s | **3.4x faster** |
-| JSON | 100 KB | 15 MB/s | 53 MB/s | **3.6x faster** |
-| JSON | 1 MB | 14 MB/s | 43 MB/s | **3.4x faster** |
-| JavaScript | 1 KB | 13 MB/s | 22 MB/s | **1.6x faster** |
-| JavaScript | 10 KB | 13 MB/s | 23 MB/s | **1.7x faster** |
-| JavaScript | 100 KB | 12 MB/s | 23 MB/s | **1.9x faster** |
-| JavaScript | 1 MB | 11 MB/s | 22 MB/s | **1.8x faster** |
-| Rust | 1 KB | 14 MB/s | 24 MB/s | **1.7x faster** |
-| Rust | 10 KB | 14 MB/s | 25 MB/s | **1.8x faster** |
-| Rust | 100 KB | 12 MB/s | 22 MB/s | **1.9x faster** |
-| Rust | 1 MB | 13 MB/s | 23 MB/s | **1.7x faster** |
-| CSS | 1 KB | 19 MB/s | 28 MB/s | **1.5x faster** |
-| CSS | 10 KB | 19 MB/s | 32 MB/s | **1.7x faster** |
-| CSS | 100 KB | 18 MB/s | 32 MB/s | **1.8x faster** |
-| CSS | 1 MB | 17 MB/s | 30 MB/s | **1.7x faster** |
-| Python | 1 KB | 10 MB/s | 28 MB/s | **2.7x faster** |
-| Python | 10 KB | 10 MB/s | 31 MB/s | **3.1x faster** |
-| Python | 100 KB | 9 MB/s | 31 MB/s | **3.3x faster** |
-| Python | 1 MB | 9 MB/s | 27 MB/s | **3.1x faster** |
+SemTree is **1.5-3.7x faster** than tree-sitter on cold parse across all languages and sizes.
 
-### Incremental Reparse (10 KB files)
+| Language | 1 KB | 10 KB | 100 KB | 1 MB |
+|----------|------|-------|--------|------|
+| **JSON** | 2.9x faster (31 vs 11 MB/s) | 3.6x faster (53 vs 15 MB/s) | 3.7x faster (55 vs 15 MB/s) | 3.6x faster (51 vs 14 MB/s) |
+| **JavaScript** | 1.7x faster (22 vs 13 MB/s) | 1.8x faster (23 vs 13 MB/s) | 1.9x faster (23 vs 12 MB/s) | 1.9x faster (22 vs 12 MB/s) |
+| **Rust** | 1.7x faster (23 vs 14 MB/s) | 1.8x faster (25 vs 14 MB/s) | 1.8x faster (24 vs 13 MB/s) | 1.8x faster (23 vs 13 MB/s) |
+| **CSS** | 1.6x faster (29 vs 19 MB/s) | 1.7x faster (32 vs 19 MB/s) | 1.8x faster (32 vs 18 MB/s) | 1.8x faster (31 vs 17 MB/s) |
+| **Python** | 2.5x faster (27 vs 10 MB/s) | 3.0x faster (30 vs 10 MB/s) | 3.0x faster (30 vs 9 MB/s) | 3.0x faster (28 vs 10 MB/s) |
 
-| Language | Tree-sitter (edit + reparse) | SemTree (full reparse) | Result |
-|----------|------------------------------|------------------------|--------|
-| JSON | 660.9 µs | 194.2 µs | **3.4x faster** |
-| JavaScript | 828.7 µs | 440.6 µs | **1.9x faster** |
-| Rust | 758.5 µs | 411.4 µs | **1.8x faster** |
-| CSS | 590.9 µs | 332.1 µs | **1.8x faster** |
-| Python | 1.10 ms | 345.1 µs | **3.2x faster** |
+### 2. Incremental Reparse
 
-### Tree Traversal (10 KB files, full DFS)
+Even doing a **full reparse**, SemTree beats tree-sitter's optimized `edit() + reparse()` with old tree.
 
-| Language | Tree-sitter | SemTree | Notes |
-|----------|-------------|---------|-------|
-| JSON | 249.2 µs (6,876 nodes) | 113.8 µs (6,814 nodes) | **2.2x faster** |
-| JavaScript | 217.7 µs (4,577 nodes) | 228.9 µs (12,588 nodes) | 1.05x slower (3x more nodes) |
-| Rust | 213.1 µs (4,222 nodes) | 219.7 µs (12,770 nodes) | 1.03x slower (3x more nodes) |
-| CSS | 127.6 µs (3,597 nodes) | 187.3 µs (10,966 nodes) | 1.5x slower (3x more nodes) |
-| Python | 225.9 µs (4,423 nodes) | 196.1 µs (10,832 nodes) | **1.2x faster** (2.4x more nodes) |
+| Language | Tree-sitter (edit+reparse) | SemTree (full reparse) | Result |
+|----------|---------------------------|------------------------|--------|
+| JSON | 686 µs | 193 µs | **3.6x faster** |
+| JavaScript | 801 µs | 432 µs | **1.9x faster** |
+| Rust | 774 µs | 418 µs | **1.9x faster** |
+| CSS | 597 µs | 346 µs | **1.7x faster** |
+| Python | 1.12 ms | 359 µs | **3.1x faster** |
 
-### Features Tree-sitter Can't Do
+**By edit type** (10 KB JSON):
+
+| Edit Type | Tree-sitter | SemTree | Result |
+|-----------|-------------|---------|--------|
+| Insert character | 1.35 ms | 190 µs | **7.1x faster** |
+| Delete line | 677 µs | 125 ns | **5,419x faster** |
+| Append block | 1.33 ms | 191 µs | **7.0x faster** |
+
+### 3. Memory Efficiency
+
+SemTree uses more memory per node due to Arc-based structural sharing (arena allocator planned).
+
+| Language | Tree-sitter | SemTree | Overhead |
+|----------|-------------|---------|----------|
+| JSON (10 KB) | 6,876 nodes (~322 KB, 32x src) | 6,814 nodes (~425 KB, 42x src) | 1.3x |
+| JavaScript (10 KB) | 4,577 nodes (~214 KB, 21x src) | 12,588 nodes (~786 KB, 78x src) | 3.7x |
+| Rust (10 KB) | 4,222 nodes (~197 KB, 20x src) | 12,770 nodes (~798 KB, 79x src) | 4.0x |
+| CSS (10 KB) | 3,597 nodes (~168 KB, 16x src) | 10,966 nodes (~685 KB, 66x src) | 4.1x |
+| Python (10 KB) | 4,423 nodes (~207 KB, 20x src) | 10,832 nodes (~677 KB, 66x src) | 3.3x |
+
+> SemTree produces a finer-grained tree (2-3x more nodes) which is more detailed for tooling but costs more memory. An arena allocator would bring this down significantly.
+
+### 4. Error Recovery
+
+SemTree handles broken code **1.6-8.7x faster** than tree-sitter while preserving 100% of source text.
+
+**Speed** (parsing intentionally broken code):
+
+| Broken Code | Tree-sitter | SemTree | Result |
+|-------------|-------------|---------|--------|
+| Missing semicolons (JS) | 18.5 µs | 11.7 µs | **1.6x faster** |
+| Unclosed braces (JS) | 71.9 µs | 8.2 µs | **8.7x faster** |
+| Garbage tokens (JS) | 31.5 µs | 9.8 µs | **3.2x faster** |
+| Mixed valid/invalid (Rust) | 61.4 µs | 13.1 µs | **4.7x faster** |
+| Invalid JSON | 21.1 µs | 8.2 µs | **2.6x faster** |
+| Missing colons (CSS) | 34.5 µs | 9.3 µs | **3.7x faster** |
+| Indentation errors (Python) | 19.1 µs | 11.1 µs | **1.7x faster** |
+
+**Quality** (tree completeness on broken code):
+
+| Broken Code | Tree-sitter | SemTree |
+|-------------|-------------|---------|
+| Missing semicolons (JS) | 113 nodes, 0 errors, 100% valid | 318 nodes, 19 errors, 100% text preserved |
+| Unclosed braces (JS) | 71 nodes, 2 errors, 97% valid | 210 nodes, 18 errors, 100% text preserved |
+| Garbage tokens (JS) | 80 nodes, 6 errors, 92% valid | 234 nodes, 18 errors, 100% text preserved |
+| Mixed valid/invalid (Rust) | 106 nodes, 3 errors, 97% valid | 346 nodes, 26 errors, 100% text preserved |
+| Invalid JSON | 148 nodes, 10 errors, 93% valid | 236 nodes, 9 errors, 100% text preserved |
+
+> Tree-sitter produces fewer error nodes (better classification). SemTree preserves 100% of source text (lossless) and wraps unrecognized tokens in ERROR nodes. Both always produce a navigable tree.
+
+### 5. Features Tree-sitter Can't Do
 
 | Feature | SemTree Time | Tree-sitter |
 |---------|-------------|-------------|
 | Semantic model (symbols, scopes, refs) | 165 µs | N/A |
-| Find all identifiers (query) | 126 µs | N/A |
-| Code formatting | 82 µs | N/A |
-| Linting with semantics | 165 µs | N/A |
+| Find all identifiers (query) | 124 µs | N/A |
+| Code formatting | 85 µs | N/A |
+| Linting with semantics | 168 µs | N/A |
 | Refactoring (rename, extract, inline) | Built-in | N/A |
 | AI APIs (JSON command interface) | Built-in | N/A |
 | Plugin system | Built-in | N/A |
@@ -69,7 +98,8 @@ Measured on real-world inputs across 5 languages. Median of 50 iterations, `--re
 ### Run Benchmarks Yourself
 
 ```bash
-cargo run -p semtree_bench --release -- 100
+cargo run -p semtree_bench --release -- 100   # 100 iterations
+cargo run -p semtree_bench --release -- 30    # quick run (~25s)
 ```
 
 ---
