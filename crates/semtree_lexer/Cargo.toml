@@ -1,0 +1,9 @@
+[package]
+name = "semtree_lexer"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+semtree_core.workspace = true
+smol_str.workspace = true
+text-size.workspace = true

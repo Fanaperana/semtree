@@ -1,0 +1,11 @@
+[package]
+name = "semtree_ts_import"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+semtree_grammar.workspace = true
+semtree_core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+smol_str.workspace = true

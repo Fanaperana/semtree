@@ -1,0 +1,14 @@
+[package]
+name = "semtree_core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+smol_str.workspace = true
+text-size.workspace = true
+rustc-hash.workspace = true
+serde = { workspace = true, optional = true }
+
+[features]
+default = []
+serde = ["dep:serde", "smol_str/serde", "text-size/serde"]

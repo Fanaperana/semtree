@@ -1,0 +1,14 @@
+[package]
+name = "semtree_parser"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+semtree_core.workspace = true
+semtree_lexer.workspace = true
+semtree_green.workspace = true
+semtree_red.workspace = true
+semtree_grammar.workspace = true
+text-size.workspace = true
+smol_str.workspace = true
+rustc-hash.workspace = true

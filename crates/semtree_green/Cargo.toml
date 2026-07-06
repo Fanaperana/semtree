@@ -1,0 +1,10 @@
+[package]
+name = "semtree_green"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+semtree_core.workspace = true
+text-size.workspace = true
+rustc-hash.workspace = true
+smol_str.workspace = true

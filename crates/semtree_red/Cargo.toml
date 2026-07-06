@@ -1,0 +1,10 @@
+[package]
+name = "semtree_red"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+semtree_core.workspace = true
+semtree_green.workspace = true
+text-size.workspace = true
+smol_str.workspace = true

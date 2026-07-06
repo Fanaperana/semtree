@@ -1,0 +1,11 @@
+[package]
+name = "semtree_grammar"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+semtree_core.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+smol_str = { workspace = true, features = ["serde"] }
+rustc-hash.workspace = true
