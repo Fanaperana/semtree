@@ -57,7 +57,7 @@ enum Commands {
         file: PathBuf,
     },
 
-    /// Format a source file (placeholder)
+    /// Format a source file
     Format {
         /// Source file to format
         file: PathBuf,
@@ -70,6 +70,18 @@ enum Commands {
 
         /// Query pattern (S-expression or kind name)
         pattern: String,
+    },
+
+    /// Lint a source file for common issues
+    Lint {
+        /// Source file to lint
+        file: PathBuf,
+    },
+
+    /// Show symbols (functions, variables, types) in a source file
+    Symbols {
+        /// Source file to analyze
+        file: PathBuf,
     },
 
     /// Run benchmarks on parsing
@@ -110,6 +122,8 @@ fn main() {
         Commands::Check { file } => commands::check(file),
         Commands::Format { file } => commands::format(file),
         Commands::Query { file, pattern } => commands::query(file, pattern),
+        Commands::Lint { file } => commands::lint(file),
+        Commands::Symbols { file } => commands::symbols(file),
         Commands::Benchmark { file, iterations } => commands::benchmark(file, iterations),
         Commands::Import { file, output } => commands::import(file, output),
         Commands::Doctor => commands::doctor(),

@@ -213,18 +213,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6b1e7f9a428571be2dc5bc0505c13fb6bf936822b894ec87abf8a08a4e51742d"
 
 [[package]]
+name = "semtree_ast"
+version = "0.1.0"
+dependencies = [
+ "rustc-hash",
+ "semtree_core",
+ "semtree_grammar",
+ "semtree_green",
+ "semtree_parser",
+ "semtree_red",
+ "smol_str",
+ "text-size",
+]
+
+[[package]]
 name = "semtree_cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "semtree_ast",
  "semtree_core",
+ "semtree_format",
  "semtree_grammar",
  "semtree_green",
  "semtree_lexer",
+ "semtree_lint",
  "semtree_parser",
  "semtree_query",
  "semtree_red",
  "semtree_runtime",
+ "semtree_semantic",
  "semtree_ts_import",
  "serde_json",
 ]
@@ -235,6 +253,19 @@ version = "0.1.0"
 dependencies = [
  "rustc-hash",
  "serde",
+ "smol_str",
+ "text-size",
+]
+
+[[package]]
+name = "semtree_format"
+version = "0.1.0"
+dependencies = [
+ "semtree_core",
+ "semtree_grammar",
+ "semtree_green",
+ "semtree_parser",
+ "semtree_red",
  "smol_str",
  "text-size",
 ]
@@ -265,6 +296,19 @@ name = "semtree_lexer"
 version = "0.1.0"
 dependencies = [
  "semtree_core",
+ "smol_str",
+ "text-size",
+]
+
+[[package]]
+name = "semtree_lint"
+version = "0.1.0"
+dependencies = [
+ "semtree_core",
+ "semtree_green",
+ "semtree_parser",
+ "semtree_red",
+ "semtree_semantic",
  "smol_str",
  "text-size",
 ]
@@ -316,6 +360,19 @@ dependencies = [
  "semtree_green",
  "semtree_red",
  "semtree_ts_import",
+ "smol_str",
+ "text-size",
+]
+
+[[package]]
+name = "semtree_semantic"
+version = "0.1.0"
+dependencies = [
+ "rustc-hash",
+ "semtree_core",
+ "semtree_green",
+ "semtree_parser",
+ "semtree_red",
  "smol_str",
  "text-size",
 ]

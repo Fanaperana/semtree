@@ -1,0 +1,16 @@
+[package]
+name = "semtree_ast"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+semtree_core.workspace = true
+semtree_red.workspace = true
+semtree_green.workspace = true
+semtree_grammar.workspace = true
+smol_str.workspace = true
+text-size.workspace = true
+rustc-hash.workspace = true
+
+[dev-dependencies]
+semtree_parser.workspace = true

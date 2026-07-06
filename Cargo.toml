@@ -8,6 +8,10 @@ members = [
     "crates/semtree_grammar",
     "crates/semtree_runtime",
     "crates/semtree_query",
+    "crates/semtree_ast",
+    "crates/semtree_semantic",
+    "crates/semtree_format",
+    "crates/semtree_lint",
     "crates/semtree_ts_import",
     "crates/semtree_cli",
 ]
@@ -28,6 +32,10 @@ semtree_parser = { path = "crates/semtree_parser" }
 semtree_grammar = { path = "crates/semtree_grammar" }
 semtree_runtime = { path = "crates/semtree_runtime" }
 semtree_query = { path = "crates/semtree_query" }
+semtree_ast = { path = "crates/semtree_ast" }
+semtree_semantic = { path = "crates/semtree_semantic" }
+semtree_format = { path = "crates/semtree_format" }
+semtree_lint = { path = "crates/semtree_lint" }
 semtree_ts_import = { path = "crates/semtree_ts_import" }
 semtree_cli = { path = "crates/semtree_cli" }
 

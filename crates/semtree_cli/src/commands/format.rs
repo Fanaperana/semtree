@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use semtree_format::Formatter;
+
 pub fn format(file: PathBuf) -> super::Result {
     let source = std::fs::read_to_string(&file)?;
     let result = semtree_parser::Parser::parse(&source);
@@ -11,9 +13,9 @@ pub fn format(file: PathBuf) -> super::Result {
         );
     }
 
-    // Phase 1: pass-through formatter (echoes parsed tree text)
     let root = result.syntax();
-    print!("{}", root.text());
+    let formatted = Formatter::with_defaults().format(&root);
+    print!("{formatted}");
 
     Ok(())
 }
