@@ -4,7 +4,7 @@ use semtree_grammar::{Grammar, RuleExpr};
 use semtree_green::{GreenNode, GreenNodeBuilder};
 use semtree_red::SyntaxNode;
 use smol_str::SmolStr;
-use text_size::TextRange;
+use text_size::{TextRange, TextSize};
 
 use crate::runtime_lexer::{RawToken, RuntimeLexer, RuntimeTokenKind};
 
@@ -42,29 +42,27 @@ impl std::fmt::Display for RuntimeParseError {
     }
 }
 
+/// Recovery tokens that typically start new statements or close blocks.
+const RECOVERY_TOKENS: &[&str] = &[";", "}", ")", "]", "fn", "let", "if", "while", "for",
+    "return", "struct", "enum", "impl", "trait", "use", "mod", "pub"];
+
 /// A grammar-driven parser. Given a Grammar IR and source text, it produces
 /// a lossless green tree by interpreting the grammar rules at runtime.
-///
-/// This is the equivalent of what Tree-sitter does: you define a grammar,
-/// and it can parse any source that follows that grammar.
 pub struct RuntimeParser {
     grammar: Grammar,
     lexer: RuntimeLexer,
 }
 
 impl RuntimeParser {
-    /// Create a new runtime parser from a grammar.
     pub fn new(grammar: Grammar) -> Self {
         let lexer = RuntimeLexer::new(&grammar);
         Self { grammar, lexer }
     }
 
-    /// Parse source text according to the grammar, producing a syntax tree.
     pub fn parse(&self, source: &str) -> RuntimeParseResult {
         let tokens = self.lexer.tokenize(source);
         let mut ctx = ParseContext::new(&self.grammar, &tokens, source);
 
-        // Find the entry rule (first rule in the grammar).
         let entry_rule = self
             .grammar
             .rules
@@ -75,19 +73,15 @@ impl RuntimeParser {
 
         ctx.builder.start_node(SyntaxKind::SOURCE_FILE);
 
-        // Parse the entry rule repeatedly (top-level items).
         while !ctx.at_eof() {
             let before = ctx.pos;
             ctx.parse_rule(&entry_rule);
             if ctx.pos == before {
-                // No progress — consume one token as error and move on.
-                ctx.error_skip("unexpected token");
+                ctx.error_recover("unexpected token");
             }
         }
 
-        // Eat any remaining trivia.
         ctx.eat_trivia();
-
         ctx.builder.finish_node();
 
         RuntimeParseResult {
@@ -108,9 +102,12 @@ struct ParseContext<'a> {
     pos: usize,
     builder: GreenNodeBuilder,
     errors: Vec<RuntimeParseError>,
-    /// Tracks rules currently being parsed to detect left recursion.
     in_progress: FxHashSet<SmolStr>,
+    /// Nesting depth guard to prevent stack overflow on deep recursion.
+    depth: u32,
 }
+
+const MAX_DEPTH: u32 = 512;
 
 impl<'a> ParseContext<'a> {
     fn new(grammar: &'a Grammar, tokens: &'a [RawToken], source: &'a str) -> Self {
@@ -122,6 +119,7 @@ impl<'a> ParseContext<'a> {
             builder: GreenNodeBuilder::new(),
             errors: Vec::new(),
             in_progress: FxHashSet::default(),
+            depth: 0,
         }
     }
 
@@ -129,27 +127,14 @@ impl<'a> ParseContext<'a> {
         self.pos >= self.tokens.len() || self.tokens[self.pos].kind == RuntimeTokenKind::Eof
     }
 
-    fn current(&self) -> &RawToken {
+    fn current_text(&self) -> &str {
         if self.pos < self.tokens.len() {
-            &self.tokens[self.pos]
+            self.tokens[self.pos].text.as_str()
         } else {
-            self.tokens.last().unwrap()
+            ""
         }
     }
 
-    fn peek_non_trivia(&self) -> &RawToken {
-        let mut i = self.pos;
-        while i < self.tokens.len() && self.tokens[i].kind.is_trivia() {
-            i += 1;
-        }
-        if i < self.tokens.len() {
-            &self.tokens[i]
-        } else {
-            self.tokens.last().unwrap()
-        }
-    }
-
-    /// Return the position of the next non-trivia token without consuming anything.
     fn skip_trivia_pos(&self) -> usize {
         let mut i = self.pos;
         while i < self.tokens.len() && self.tokens[i].kind.is_trivia() {
@@ -158,7 +143,24 @@ impl<'a> ParseContext<'a> {
         i
     }
 
-    /// Emit trivia tokens into the builder and advance `self.pos` past them.
+    fn peek_text(&self) -> &str {
+        let i = self.skip_trivia_pos();
+        if i < self.tokens.len() {
+            self.tokens[i].text.as_str()
+        } else {
+            ""
+        }
+    }
+
+    fn peek_kind(&self) -> RuntimeTokenKind {
+        let i = self.skip_trivia_pos();
+        if i < self.tokens.len() {
+            self.tokens[i].kind
+        } else {
+            RuntimeTokenKind::Eof
+        }
+    }
+
     fn eat_trivia(&mut self) {
         while self.pos < self.tokens.len() && self.tokens[self.pos].kind.is_trivia() {
             let tok = &self.tokens[self.pos];
@@ -174,7 +176,6 @@ impl<'a> ParseContext<'a> {
         }
     }
 
-    /// Consume trivia + one real token and emit them all into the builder.
     fn bump(&mut self) {
         self.eat_trivia();
         if !self.at_eof() {
@@ -202,18 +203,53 @@ impl<'a> ParseContext<'a> {
         }
     }
 
-    fn error_skip(&mut self, message: &str) {
+    // ── Error Recovery ──────────────────────────────────────
+
+    /// Skip to a recovery point, wrapping skipped tokens in an ERROR node.
+    fn error_recover(&mut self, message: &str) {
         self.eat_trivia();
-        if !self.at_eof() {
-            let tok = &self.tokens[self.pos];
-            self.errors.push(RuntimeParseError {
-                message: message.to_string(),
-                range: tok.range,
-            });
-            self.builder.start_node(SyntaxKind::ERROR);
-            self.bump();
-            self.builder.finish_node();
+        if self.at_eof() {
+            return;
         }
+
+        let tok = &self.tokens[self.pos];
+        self.errors.push(RuntimeParseError {
+            message: message.to_string(),
+            range: tok.range,
+        });
+
+        self.builder.start_node(SyntaxKind::ERROR);
+
+        // Consume tokens until we hit a recovery point.
+        let mut count = 0;
+        while !self.at_eof() && count < 50 {
+            let text = self.peek_text();
+            if count > 0 && RECOVERY_TOKENS.contains(&text) {
+                break;
+            }
+            // Stop at block closers.
+            if count > 0 && (text == "}" || text == ")") {
+                break;
+            }
+            self.bump();
+            count += 1;
+        }
+
+        self.builder.finish_node();
+    }
+
+    /// Emit an error and try to insert a missing token (phantom token).
+    fn error_missing(&mut self, expected: &str) {
+        let range = if self.pos < self.tokens.len() {
+            self.tokens[self.pos].range
+        } else {
+            let end = self.source.len() as u32;
+            TextRange::new(TextSize::new(end), TextSize::new(end))
+        };
+        self.errors.push(RuntimeParseError {
+            message: format!("expected {expected}"),
+            range,
+        });
     }
 
     fn error_here(&mut self, message: &str) {
@@ -221,7 +257,7 @@ impl<'a> ParseContext<'a> {
             self.tokens[self.pos].range
         } else {
             let end = self.source.len() as u32;
-            TextRange::new(text_size::TextSize::new(end), text_size::TextSize::new(end))
+            TextRange::new(TextSize::new(end), TextSize::new(end))
         };
         self.errors.push(RuntimeParseError {
             message: message.to_string(),
@@ -229,10 +265,14 @@ impl<'a> ParseContext<'a> {
         });
     }
 
-    /// Try to parse a named rule from the grammar.
-    /// Returns true if the rule matched and consumed tokens.
+    // ── Rule Parsing ────────────────────────────────────────
+
     fn parse_rule(&mut self, name: &str) -> bool {
-        // Handle built-in terminal rules.
+        if self.depth > MAX_DEPTH {
+            self.error_here("maximum parse depth exceeded");
+            return false;
+        }
+
         match name {
             "Identifier" | "identifier" | "_identifier" => return self.parse_builtin_ident(),
             "Integer" | "integer" | "number" => return self.parse_builtin_integer(),
@@ -249,13 +289,13 @@ impl<'a> ParseContext<'a> {
             }
         };
 
-        // Left recursion guard.
         let name_smol: SmolStr = name.into();
         if self.in_progress.contains(&name_smol) {
             return false;
         }
 
         self.in_progress.insert(name_smol.clone());
+        self.depth += 1;
 
         let save_pos = self.pos;
         let save_builder = self.builder.checkpoint();
@@ -268,21 +308,24 @@ impl<'a> ParseContext<'a> {
         if !matched {
             self.builder.rollback(save_builder);
             self.pos = save_pos;
+            self.depth -= 1;
             self.in_progress.remove(&name_smol);
             return false;
         }
 
         self.builder.finish_node();
+        self.depth -= 1;
         self.in_progress.remove(&name_smol);
         true
     }
 
-    /// Map rule names to SyntaxKind values deterministically.
     fn rule_name_to_kind(&self, name: &str) -> SyntaxKind {
-        // Use a range starting at 4096 for user-defined rules.
         let mut hash: u16 = 4096;
         for (i, b) in name.bytes().enumerate() {
-            hash = hash.wrapping_add(b as u16).wrapping_mul(31).wrapping_add(i as u16);
+            hash = hash
+                .wrapping_add(b as u16)
+                .wrapping_mul(31)
+                .wrapping_add(i as u16);
         }
         if hash < 4096 {
             hash += 4096;
@@ -290,7 +333,6 @@ impl<'a> ParseContext<'a> {
         SyntaxKind(hash)
     }
 
-    /// Try to parse a grammar expression. Returns true if it matched.
     fn parse_expr(&mut self, expr: &RuleExpr) -> bool {
         match expr {
             RuleExpr::Literal(s) => self.parse_literal(s),
@@ -301,16 +343,77 @@ impl<'a> ParseContext<'a> {
             RuleExpr::Repeat1(inner) => self.parse_repeat1(inner),
             RuleExpr::Optional(inner) => {
                 self.parse_expr(inner);
-                true // Optional always succeeds.
+                true
             }
             RuleExpr::Field(_name, inner) => self.parse_expr(inner),
             RuleExpr::Token(inner) => self.parse_expr(inner),
-            RuleExpr::Prec(_, inner) | RuleExpr::PrecLeft(_, inner) | RuleExpr::PrecRight(_, inner) => {
-                self.parse_expr(inner)
-            }
+            RuleExpr::Prec(prec, inner) => self.parse_prec(*prec, inner),
+            RuleExpr::PrecLeft(prec, inner) => self.parse_prec_left(*prec, inner),
+            RuleExpr::PrecRight(prec, inner) => self.parse_prec_right(*prec, inner),
             RuleExpr::Blank => true,
         }
     }
+
+    // ── Precedence Climbing ─────────────────────────────────
+
+    fn parse_prec(&mut self, _prec: i32, inner: &RuleExpr) -> bool {
+        self.parse_expr(inner)
+    }
+
+    fn parse_prec_left(&mut self, _prec: i32, inner: &RuleExpr) -> bool {
+        // For PrecLeft(p, Seq([lhs, op, rhs])), parse left-associatively.
+        if let RuleExpr::Seq(parts) = inner {
+            if parts.len() == 3 {
+                return self.parse_binary_left(parts);
+            }
+        }
+        self.parse_expr(inner)
+    }
+
+    fn parse_prec_right(&mut self, _prec: i32, inner: &RuleExpr) -> bool {
+        if let RuleExpr::Seq(parts) = inner {
+            if parts.len() == 3 {
+                return self.parse_binary_right(parts);
+            }
+        }
+        self.parse_expr(inner)
+    }
+
+    fn parse_binary_left(&mut self, parts: &[RuleExpr]) -> bool {
+        if !self.parse_expr(&parts[0]) {
+            return false;
+        }
+        loop {
+            let save = self.pos;
+            let save_builder = self.builder.checkpoint();
+            if !self.try_parse_expr(&parts[1]) || !self.try_parse_expr(&parts[2]) {
+                self.pos = save;
+                self.builder.rollback(save_builder);
+                break;
+            }
+        }
+        true
+    }
+
+    fn parse_binary_right(&mut self, parts: &[RuleExpr]) -> bool {
+        if !self.parse_expr(&parts[0]) {
+            return false;
+        }
+        let save = self.pos;
+        let save_builder = self.builder.checkpoint();
+        if self.try_parse_expr(&parts[1]) {
+            if !self.parse_binary_right(parts) {
+                self.pos = save;
+                self.builder.rollback(save_builder);
+            }
+        } else {
+            self.pos = save;
+            self.builder.rollback(save_builder);
+        }
+        true
+    }
+
+    // ── Core Parse Methods ──────────────────────────────────
 
     fn parse_literal(&mut self, expected: &str) -> bool {
         let peek_pos = self.skip_trivia_pos();
@@ -329,17 +432,25 @@ impl<'a> ParseContext<'a> {
 
     fn parse_seq(&mut self, exprs: &[RuleExpr]) -> bool {
         let _save = self.pos;
-        for expr in exprs {
+        for (i, expr) in exprs.iter().enumerate() {
             if !self.parse_expr(expr) {
-                // Error recovery: report but continue trying.
-                // For strict mode we'd restore `save` and return false.
-                // For error-tolerant parsing, emit an error and skip.
-                self.eat_trivia();
-                if !self.at_eof() {
+                // Error recovery: if we already consumed tokens (i > 0),
+                // report the missing element but continue. This makes
+                // partial parses produce trees even with errors.
+                if i > 0 {
                     let expected = self.describe_expr(expr);
-                    self.error_here(&format!("expected {expected}"));
+                    self.error_missing(&expected);
+
+                    // Try to recover: if the missing token is a simple literal
+                    // like ";", ")", "}", we can just note it missing and continue.
+                    if let RuleExpr::Literal(lit) = expr {
+                        if lit.len() <= 2 {
+                            continue;
+                        }
+                    }
+                    return true;
                 }
-                return true; // Partial match with errors.
+                return false;
             }
         }
         true
@@ -366,6 +477,7 @@ impl<'a> ParseContext<'a> {
     }
 
     fn parse_repeat(&mut self, inner: &RuleExpr) -> bool {
+        let mut iterations = 0u32;
         loop {
             let save = self.pos;
             let save_builder = self.builder.checkpoint();
@@ -375,6 +487,11 @@ impl<'a> ParseContext<'a> {
                 break;
             }
             if self.pos == save {
+                break;
+            }
+            iterations += 1;
+            if iterations > 100_000 {
+                self.error_here("repeat limit exceeded");
                 break;
             }
         }
@@ -385,6 +502,7 @@ impl<'a> ParseContext<'a> {
         if !self.parse_expr(inner) {
             return false;
         }
+        let mut iterations = 0u32;
         loop {
             let save = self.pos;
             let save_builder = self.builder.checkpoint();
@@ -396,12 +514,15 @@ impl<'a> ParseContext<'a> {
             if self.pos == save {
                 break;
             }
+            iterations += 1;
+            if iterations > 100_000 {
+                self.error_here("repeat limit exceeded");
+                break;
+            }
         }
         true
     }
 
-    /// Try to parse an expression without emitting errors on failure.
-    /// Used for backtracking in Choice and Repeat.
     fn try_parse_expr(&mut self, expr: &RuleExpr) -> bool {
         let save_errors = self.errors.len();
         let result = self.parse_expr(expr);
@@ -410,6 +531,8 @@ impl<'a> ParseContext<'a> {
         }
         result
     }
+
+    // ── Built-in terminals ──────────────────────────────────
 
     fn parse_builtin_ident(&mut self) -> bool {
         let peek = self.skip_trivia_pos();

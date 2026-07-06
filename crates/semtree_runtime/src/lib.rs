@@ -4,7 +4,7 @@ mod incremental;
 
 pub use runtime_lexer::RuntimeLexer;
 pub use runtime_parser::{RuntimeParser, RuntimeParseResult};
-pub use incremental::{EditRegion, IncrementalParser};
+pub use incremental::{EditRegion, IncrementalParser, apply_edits};
 
 #[cfg(test)]
 mod tests;
