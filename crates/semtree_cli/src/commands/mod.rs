@@ -1,5 +1,6 @@
 mod init;
 mod parse;
+mod run;
 mod check;
 mod format;
 mod query;
@@ -9,6 +10,7 @@ mod doctor;
 
 pub use init::init;
 pub use parse::parse;
+pub use run::run;
 pub use check::check;
 pub use format::format;
 pub use query::query;

@@ -2,12 +2,40 @@ use std::path::PathBuf;
 
 use semtree_core::SyntaxKind;
 use semtree_parser::Parser;
+use semtree_query::engine::QueryEngine;
+use semtree_query::pattern::{parse_query, PatternNode, QueryPattern};
 
 pub fn query(file: PathBuf, pattern: String) -> super::Result {
     let source = std::fs::read_to_string(&file)?;
     let result = Parser::parse(&source);
     let root = result.syntax();
 
+    // Try S-expression query syntax first.
+    if pattern.starts_with('(') {
+        let query = parse_query(&pattern).map_err(|e| format!("query parse error: {e}"))?;
+        let matches = QueryEngine::query(&root, &query);
+
+        println!("Found {} match(es):\n", matches.len());
+        for m in &matches {
+            let range = m.node.text_range();
+            println!(
+                "  [{start}..{end}] {kind:?}",
+                start = u32::from(range.start()),
+                end = u32::from(range.end()),
+                kind = m.node.kind(),
+            );
+            for cap in &m.captures {
+                println!(
+                    "    @{name} = {text}",
+                    name = cap.name,
+                    text = truncate(&cap.text(), 60),
+                );
+            }
+        }
+        return Ok(());
+    }
+
+    // Simple kind-name query.
     let target_kind = match pattern.as_str() {
         "Function" | "function" | "fn" => Some(SyntaxKind::FUNCTION),
         "Struct" | "struct" => Some(SyntaxKind::STRUCT_DEF),
@@ -26,12 +54,7 @@ pub fn query(file: PathBuf, pattern: String) -> super::Result {
 
     match target_kind {
         Some(kind) => {
-            let matches: Vec<_> = root
-                .descendants()
-                .into_iter()
-                .filter(|n| n.kind() == kind)
-                .collect();
-
+            let matches = QueryEngine::find_by_kind(&root, kind);
             println!("Found {} match(es) for '{pattern}':\n", matches.len());
             for node in &matches {
                 let range = node.text_range();
@@ -44,19 +67,9 @@ pub fn query(file: PathBuf, pattern: String) -> super::Result {
             }
         }
         None => {
-            // Text search through identifiers
-            let matches: Vec<_> = root
-                .descendants()
-                .into_iter()
-                .filter(|n| {
-                    n.child_token(SyntaxKind::IDENT)
-                        .map(|t| t.text().contains(&pattern))
-                        .unwrap_or(false)
-                })
-                .collect();
-
+            let matches = QueryEngine::find_by_text(&root, &pattern);
             println!(
-                "Found {} node(s) containing identifier '{pattern}':\n",
+                "Found {} node(s) containing '{pattern}':\n",
                 matches.len()
             );
             for node in &matches {

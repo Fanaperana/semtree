@@ -72,9 +72,33 @@ impl GreenNodeBuilder {
         self.cache
     }
 
+    /// Save a checkpoint of the current builder state for rollback.
+    pub fn checkpoint(&self) -> BuilderCheckpoint {
+        BuilderCheckpoint {
+            stack_len: self.stack.len(),
+            children_len: self.stack.last().map(|(_, c)| c.len()).unwrap_or(0),
+        }
+    }
+
+    /// Rollback to a previously saved checkpoint, discarding any tokens/nodes
+    /// added since the checkpoint.
+    pub fn rollback(&mut self, checkpoint: BuilderCheckpoint) {
+        self.stack.truncate(checkpoint.stack_len);
+        if let Some((_, children)) = self.stack.last_mut() {
+            children.truncate(checkpoint.children_len);
+        }
+    }
+
     fn current_children(&mut self) -> &mut Vec<GreenElement> {
         &mut self.stack.last_mut().expect("no node started").1
     }
+}
+
+/// A checkpoint into the builder state, used for speculative parsing.
+#[derive(Debug, Clone, Copy)]
+pub struct BuilderCheckpoint {
+    stack_len: usize,
+    children_len: usize,
 }
 
 impl Default for GreenNodeBuilder {

@@ -37,6 +37,20 @@ enum Commands {
         format: String,
     },
 
+    /// Parse a source file using a grammar definition (grammar-driven)
+    Run {
+        /// Grammar file (.semtree or .json)
+        #[arg(short, long)]
+        grammar: PathBuf,
+
+        /// Source file to parse
+        file: PathBuf,
+
+        /// Output format: tree, json, or sexp
+        #[arg(short, long, default_value = "tree")]
+        format: String,
+    },
+
     /// Check a grammar definition for errors
     Check {
         /// Grammar file (.semtree)
@@ -49,12 +63,12 @@ enum Commands {
         file: PathBuf,
     },
 
-    /// Query a syntax tree
+    /// Query a syntax tree using S-expression patterns
     Query {
         /// Source file to query
         file: PathBuf,
 
-        /// Query pattern
+        /// Query pattern (S-expression or kind name)
         pattern: String,
     },
 
@@ -88,6 +102,11 @@ fn main() {
     let result = match cli.command {
         Commands::Init { name, output } => commands::init(name, output),
         Commands::Parse { file, format } => commands::parse(file, format),
+        Commands::Run {
+            grammar,
+            file,
+            format,
+        } => commands::run(grammar, file, format),
         Commands::Check { file } => commands::check(file),
         Commands::Format { file } => commands::format(file),
         Commands::Query { file, pattern } => commands::query(file, pattern),

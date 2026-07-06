@@ -1,5 +1,4 @@
 use rustc_hash::FxHashMap;
-use semtree_core::SyntaxKind;
 use semtree_grammar::Grammar;
 use smol_str::SmolStr;
 use text_size::{TextRange, TextSize};
@@ -90,7 +89,6 @@ impl RuntimeLexer {
         set: &mut FxHashMap<SmolStr, u16>,
         counter: &mut u16,
     ) {
-        use semtree_grammar::RuleExpr;
         for rule in grammar.rules.values() {
             Self::collect_literals_from_expr(&rule.expr, set, counter);
         }
