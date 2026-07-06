@@ -1,0 +1,684 @@
+language rust
+
+keyword fn
+keyword let
+keyword mut
+keyword struct
+keyword enum
+keyword impl
+keyword trait
+keyword mod
+keyword use
+keyword pub
+keyword const
+keyword static
+keyword type
+keyword return
+keyword if
+keyword else
+keyword match
+keyword loop
+keyword while
+keyword for
+keyword in
+keyword break
+keyword continue
+keyword self
+keyword Self
+keyword super
+keyword crate
+keyword as
+keyword ref
+keyword where
+keyword true
+keyword false
+keyword async
+keyword await
+keyword move
+keyword dyn
+keyword unsafe
+keyword extern
+
+# ── Top-Level ────────────────────────────────────────────────
+
+Crate :=
+    Item*
+
+# ── Items ────────────────────────────────────────────────────
+
+Item :=
+    OuterAttr* Visibility? ItemBody
+
+ItemBody :=
+    FnItem | StructItem | EnumItem | ImplItem | TraitItem | ModItem | UseItem | ConstItem | StaticItem | TypeAliasItem
+
+Visibility :=
+    "pub" PubScope?
+
+PubScope :=
+    "(" PubTarget ")"
+
+PubTarget :=
+    "crate" | "super" | "self" | "in" Path
+
+# ── Attributes ───────────────────────────────────────────────
+
+OuterAttr :=
+    "#" "[" AttrContent "]"
+
+InnerAttr :=
+    "#" "!" "[" AttrContent "]"
+
+AttrContent :=
+    Path AttrArgs?
+
+AttrArgs :=
+    "(" AttrTokens? ")"
+
+AttrTokens :=
+    String
+
+# ── Function ─────────────────────────────────────────────────
+
+FnItem :=
+    AsyncModifier? "fn" name: Identifier GenericParams? ParamList ReturnType? WhereClause? FnBody
+
+AsyncModifier :=
+    "async"
+
+GenericParams :=
+    "<" GenericParam GenericParamTail* ">"
+
+GenericParamTail :=
+    "," GenericParam
+
+GenericParam :=
+    LifetimeParam | TypeParam
+
+LifetimeParam :=
+    "'" Identifier LifetimeBounds?
+
+LifetimeBounds :=
+    ":" "'" Identifier
+
+TypeParam :=
+    Identifier TypeBounds? TypeDefault?
+
+TypeBounds :=
+    ":" TypeBound TypeBoundTail*
+
+TypeBoundTail :=
+    "+" TypeBound
+
+TypeBound :=
+    LifetimeBound | TraitBound
+
+LifetimeBound :=
+    "'" Identifier
+
+TraitBound :=
+    Path GenericArgs?
+
+TypeDefault :=
+    "=" TypeExpr
+
+ParamList :=
+    "(" FnParams? ")"
+
+FnParams :=
+    FnParam FnParamTail*
+
+FnParamTail :=
+    "," FnParam
+
+FnParam :=
+    SelfParam | TypedParam
+
+SelfParam :=
+    SelfRef? MutModifier? "self"
+
+SelfRef :=
+    "&" Lifetime?
+
+MutModifier :=
+    "mut"
+
+TypedParam :=
+    Pattern ":" TypeExpr
+
+ReturnType :=
+    "->" TypeExpr
+
+WhereClause :=
+    "where" WherePredicate WherePredicateTail*
+
+WherePredicateTail :=
+    "," WherePredicate
+
+WherePredicate :=
+    TypeExpr ":" TypeBound TypeBoundTail*
+
+FnBody :=
+    BlockExpr | ";"
+
+# ── Struct ───────────────────────────────────────────────────
+
+StructItem :=
+    "struct" name: Identifier GenericParams? WhereClause? StructBody
+
+StructBody :=
+    StructFields | TupleFields | ";"
+
+StructFields :=
+    "{" StructField StructFieldTail* ","? "}"
+
+StructFieldTail :=
+    "," StructField
+
+StructField :=
+    Visibility? name: Identifier ":" TypeExpr
+
+TupleFields :=
+    "(" TupleField TupleFieldTail* ")"
+
+TupleFieldTail :=
+    "," TupleField
+
+TupleField :=
+    Visibility? TypeExpr
+
+# ── Enum ─────────────────────────────────────────────────────
+
+EnumItem :=
+    "enum" name: Identifier GenericParams? WhereClause? "{" EnumVariant EnumVariantTail* ","? "}"
+
+EnumVariantTail :=
+    "," EnumVariant
+
+EnumVariant :=
+    name: Identifier VariantPayload? VariantDiscriminant?
+
+VariantPayload :=
+    TupleFields | StructFields
+
+VariantDiscriminant :=
+    "=" Expression
+
+# ── Impl ─────────────────────────────────────────────────────
+
+ImplItem :=
+    "impl" GenericParams? TraitForType? TypeExpr WhereClause? "{" ImplMember* "}"
+
+TraitForType :=
+    TypeExpr "for"
+
+ImplMember :=
+    OuterAttr* Visibility? ImplMemberBody
+
+ImplMemberBody :=
+    FnItem | ConstItem | TypeAliasItem
+
+# ── Trait ────────────────────────────────────────────────────
+
+TraitItem :=
+    "trait" name: Identifier GenericParams? SuperTraits? WhereClause? "{" TraitMember* "}"
+
+SuperTraits :=
+    ":" TypeBound TypeBoundTail*
+
+TraitMember :=
+    OuterAttr* TraitMemberBody
+
+TraitMemberBody :=
+    FnItem | ConstItem | TypeAliasItem
+
+# ── Module ───────────────────────────────────────────────────
+
+ModItem :=
+    "mod" name: Identifier ModBody
+
+ModBody :=
+    "{" Item* "}" | ";"
+
+# ── Use ──────────────────────────────────────────────────────
+
+UseItem :=
+    "use" UseTree ";"
+
+UseTree :=
+    UsePath | UseGlob | UseGroup | UseRename
+
+UsePath :=
+    Path
+
+UseGlob :=
+    Path "::" "*"
+
+UseGroup :=
+    Path "::" "{" UseTree UseTreeTail* "}"
+
+UseTreeTail :=
+    "," UseTree
+
+UseRename :=
+    Path "as" Identifier
+
+# ── Const / Static / Type ───────────────────────────────────
+
+ConstItem :=
+    "const" name: Identifier ":" TypeExpr "=" Expression ";"
+
+StaticItem :=
+    "static" MutModifier? name: Identifier ":" TypeExpr "=" Expression ";"
+
+TypeAliasItem :=
+    "type" name: Identifier GenericParams? "=" TypeExpr ";"
+
+# ── Statements ───────────────────────────────────────────────
+
+Statement :=
+    LetStmt | ExprStmt | Item
+
+LetStmt :=
+    "let" MutModifier? pat: Pattern TypeAnnotation? Initializer? ";"
+
+TypeAnnotation :=
+    ":" TypeExpr
+
+Initializer :=
+    "=" Expression
+
+ExprStmt :=
+    Expression ";"
+
+# ── Expressions ──────────────────────────────────────────────
+
+Expression :=
+    ReturnExpr | BreakExpr | ContinueExpr | ClosureExpr | AssignExpr
+
+ReturnExpr :=
+    "return" Expression?
+
+BreakExpr :=
+    "break" Expression?
+
+ContinueExpr :=
+    "continue"
+
+ClosureExpr :=
+    MoveModifier? ClosureParams ClosureReturn? ClosureBody
+
+MoveModifier :=
+    "move"
+
+ClosureParams :=
+    "|" ClosureParamList? "|"
+
+ClosureParamList :=
+    ClosureParam ClosureParamTail*
+
+ClosureParamTail :=
+    "," ClosureParam
+
+ClosureParam :=
+    Pattern TypeAnnotation?
+
+ClosureReturn :=
+    "->" TypeExpr
+
+ClosureBody :=
+    BlockExpr | RangeExpr
+
+AssignExpr :=
+    RangeExpr AssignSuffix?
+
+AssignSuffix :=
+    AssignOp Expression
+
+AssignOp :=
+    "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&=" | "|=" | "^=" | "<<=" | ">>="
+
+RangeExpr :=
+    OrExpr RangeSuffix?
+
+RangeSuffix :=
+    ".." OrExpr?
+
+OrExpr :=
+    AndExpr OrTail*
+
+OrTail :=
+    "||" AndExpr
+
+AndExpr :=
+    CompareExpr AndTail*
+
+AndTail :=
+    "&&" CompareExpr
+
+CompareExpr :=
+    BitwiseOrExpr CompareTail?
+
+CompareTail :=
+    CompareOp BitwiseOrExpr
+
+CompareOp :=
+    "==" | "!=" | "<" | ">" | "<=" | ">="
+
+BitwiseOrExpr :=
+    BitwiseXorExpr BitwiseOrTail*
+
+BitwiseOrTail :=
+    "|" BitwiseXorExpr
+
+BitwiseXorExpr :=
+    BitwiseAndExpr BitwiseXorTail*
+
+BitwiseXorTail :=
+    "^" BitwiseAndExpr
+
+BitwiseAndExpr :=
+    ShiftExpr BitwiseAndTail*
+
+BitwiseAndTail :=
+    "&" ShiftExpr
+
+ShiftExpr :=
+    AddExpr ShiftTail*
+
+ShiftTail :=
+    ShiftOp AddExpr
+
+ShiftOp :=
+    "<<" | ">>"
+
+AddExpr :=
+    MulExpr AddTail*
+
+AddTail :=
+    AddOp MulExpr
+
+AddOp :=
+    "+" | "-"
+
+MulExpr :=
+    CastExpr MulTail*
+
+MulTail :=
+    MulOp CastExpr
+
+MulOp :=
+    "*" | "/" | "%"
+
+CastExpr :=
+    UnaryExpr CastSuffix*
+
+CastSuffix :=
+    "as" TypeExpr
+
+UnaryExpr :=
+    UnaryOp UnaryExpr
+    | RefExpr
+    | DerefExpr
+    | PostfixExpr
+
+UnaryOp :=
+    "-" | "!"
+
+RefExpr :=
+    "&" MutModifier? UnaryExpr
+
+DerefExpr :=
+    "*" UnaryExpr
+
+PostfixExpr :=
+    PrimaryExpr PostfixOp*
+
+PostfixOp :=
+    MethodCall | FieldAccess | CallArgs | IndexOp | TryOp | AwaitOp
+
+MethodCall :=
+    "." Identifier GenericArgs? CallArgs
+
+FieldAccess :=
+    "." Identifier
+
+CallArgs :=
+    "(" ArgumentList? ")"
+
+ArgumentList :=
+    Expression ArgTail*
+
+ArgTail :=
+    "," Expression
+
+GenericArgs :=
+    "::" "<" TypeExpr GenericArgTail* ">"
+
+GenericArgTail :=
+    "," TypeExpr
+
+IndexOp :=
+    "[" Expression "]"
+
+TryOp :=
+    "?"
+
+AwaitOp :=
+    "." "await"
+
+# ── Primary Expressions ─────────────────────────────────────
+
+PrimaryExpr :=
+    BlockExpr | IfExpr | MatchExpr | LoopExpr | WhileExpr | ForExpr | UnsafeBlock | ArrayExpr | TupleExpr | StructExpr | ParenExpr | MacroCall | PathExpr | Literal
+
+BlockExpr :=
+    "{" Statement* Expression? "}"
+
+IfExpr :=
+    "if" condition: Expression BlockExpr ElseBranch?
+
+ElseBranch :=
+    "else" ElseBody
+
+ElseBody :=
+    IfExpr | BlockExpr
+
+MatchExpr :=
+    "match" scrutinee: Expression "{" MatchArm MatchArmTail* ","? "}"
+
+MatchArmTail :=
+    "," MatchArm
+
+MatchArm :=
+    Pattern MatchGuard? "=>" Expression
+
+MatchGuard :=
+    "if" Expression
+
+LoopExpr :=
+    "loop" BlockExpr
+
+WhileExpr :=
+    "while" condition: Expression BlockExpr
+
+ForExpr :=
+    "for" pat: Pattern "in" iter: Expression BlockExpr
+
+UnsafeBlock :=
+    "unsafe" BlockExpr
+
+ArrayExpr :=
+    "[" ArrayContents? "]"
+
+ArrayContents :=
+    ArrayRepeat | ArrayElements
+
+ArrayRepeat :=
+    Expression ";" Expression
+
+ArrayElements :=
+    Expression ArrayElemTail*
+
+ArrayElemTail :=
+    "," Expression
+
+TupleExpr :=
+    "(" Expression "," TupleRest? ")"
+
+TupleRest :=
+    Expression TupleElemTail*
+
+TupleElemTail :=
+    "," Expression
+
+StructExpr :=
+    Path "{" StructExprFields? StructSpread? "}"
+
+StructExprFields :=
+    StructExprField StructExprFieldTail*
+
+StructExprFieldTail :=
+    "," StructExprField
+
+StructExprField :=
+    Identifier ":" Expression
+    | Identifier
+
+StructSpread :=
+    ".." Expression
+
+ParenExpr :=
+    "(" Expression ")"
+
+MacroCall :=
+    Path "!" MacroArgs
+
+MacroArgs :=
+    "(" MacroTokens? ")" | "[" MacroTokens? "]" | "{" MacroTokens? "}"
+
+MacroTokens :=
+    Expression MacroTokenTail*
+
+MacroTokenTail :=
+    "," Expression
+
+PathExpr :=
+    Path
+
+# ── Patterns ─────────────────────────────────────────────────
+
+Pattern :=
+    OrPattern
+
+OrPattern :=
+    SinglePattern OrPatternTail*
+
+OrPatternTail :=
+    "|" SinglePattern
+
+SinglePattern :=
+    RefPattern | StructPattern | TupleStructPattern | TuplePattern | SlicePattern | RangePattern | WildcardPattern | BindingPattern | LiteralPattern | PathPattern
+
+RefPattern :=
+    "&" MutModifier? Pattern
+
+StructPattern :=
+    Path "{" FieldPattern FieldPatternTail* StructPatternRest? "}"
+
+FieldPatternTail :=
+    "," FieldPattern
+
+FieldPattern :=
+    Identifier ":" Pattern
+    | Identifier
+
+StructPatternRest :=
+    "," ".."
+
+TupleStructPattern :=
+    Path "(" Pattern PatternTail* ")"
+
+PatternTail :=
+    "," Pattern
+
+TuplePattern :=
+    "(" Pattern PatternTail* ")"
+
+SlicePattern :=
+    "[" Pattern PatternTail* "]"
+
+RangePattern :=
+    Literal ".." Literal
+
+WildcardPattern :=
+    "_"
+
+BindingPattern :=
+    MutModifier? Identifier BindingSuffix?
+
+BindingSuffix :=
+    "@" Pattern
+
+LiteralPattern :=
+    Literal
+
+PathPattern :=
+    Path
+
+# ── Types ────────────────────────────────────────────────────
+
+TypeExpr :=
+    RefType | SliceType | ArrayType | TupleType | FnPtrType | DynType | ImplTraitType | InferType | PathType
+
+RefType :=
+    "&" Lifetime? MutModifier? TypeExpr
+
+Lifetime :=
+    "'" Identifier
+
+SliceType :=
+    "[" TypeExpr "]"
+
+ArrayType :=
+    "[" TypeExpr ";" Expression "]"
+
+TupleType :=
+    "(" TypeExpr TypeExprTail* ")"
+
+TypeExprTail :=
+    "," TypeExpr
+
+FnPtrType :=
+    "fn" "(" TypeExpr TypeExprTail* ")" ReturnType?
+
+DynType :=
+    "dyn" TypeBound TypeBoundTail*
+
+ImplTraitType :=
+    "impl" TypeBound TypeBoundTail*
+
+InferType :=
+    "_"
+
+PathType :=
+    Path GenericArgs?
+
+# ── Path ─────────────────────────────────────────────────────
+
+Path :=
+    PathRoot? Identifier PathSegment*
+
+PathRoot :=
+    "::" | "crate" "::" | "super" "::" | "self" "::"
+
+PathSegment :=
+    "::" Identifier
+
+# ── Literals ─────────────────────────────────────────────────
+
+Literal :=
+    String | Char | Integer | Float | BoolLiteral
+
+BoolLiteral :=
+    "true" | "false"

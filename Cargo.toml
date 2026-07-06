@@ -19,6 +19,7 @@ members = [
     "crates/semtree_refactor",
     "crates/semtree_cli",
     "crates/semtree_ai",
+    "crates/semtree_bench",
 ]
 resolver = "3"
 

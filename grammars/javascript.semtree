@@ -1,0 +1,407 @@
+language javascript
+
+keyword var
+keyword let
+keyword const
+keyword function
+keyword return
+keyword if
+keyword else
+keyword while
+keyword for
+keyword class
+keyword new
+keyword this
+keyword import
+keyword export
+keyword from
+keyword true
+keyword false
+keyword null
+keyword undefined
+keyword throw
+keyword try
+keyword catch
+keyword finally
+keyword switch
+keyword case
+keyword default
+keyword break
+keyword continue
+keyword typeof
+keyword instanceof
+keyword async
+keyword await
+keyword yield
+keyword extends
+keyword super
+keyword in
+keyword of
+keyword delete
+keyword void
+
+# ── Top-Level ────────────────────────────────────────────────
+
+Program :=
+    Statement*
+
+# ── Statements ───────────────────────────────────────────────
+
+Statement :=
+    ImportDecl | ExportDecl | ClassDecl | FunctionDecl | VarDecl | IfStmt | WhileStmt | ForStmt | ForOfStmt | ForInStmt | SwitchStmt | TryStmt | ReturnStmt | ThrowStmt | BreakStmt | ContinueStmt | BlockStmt | ExprStmt
+
+VarDecl :=
+    VarKind binding: VarBinding VarBindingTail* ";"
+
+VarKind :=
+    "var" | "let" | "const"
+
+VarBinding :=
+    name: Identifier TypeAnnotation? Initializer?
+
+VarBindingTail :=
+    "," VarBinding
+
+Initializer :=
+    "=" Expression
+
+TypeAnnotation :=
+    ":" TypeExpr
+
+TypeExpr :=
+    Identifier GenericArgs?
+
+GenericArgs :=
+    "<" TypeExpr GenericArgTail* ">"
+
+GenericArgTail :=
+    "," TypeExpr
+
+FunctionDecl :=
+    AsyncModifier? "function" name: Identifier ParamList Block
+
+AsyncModifier :=
+    "async"
+
+ParamList :=
+    "(" ParamItems? ")"
+
+ParamItems :=
+    Param ParamTail*
+
+ParamTail :=
+    "," Param
+
+Param :=
+    RestParam | SimpleParam
+
+SimpleParam :=
+    name: Identifier TypeAnnotation? DefaultValue?
+
+RestParam :=
+    "..." name: Identifier
+
+DefaultValue :=
+    "=" Expression
+
+Block :=
+    "{" Statement* "}"
+
+BlockStmt :=
+    Block
+
+IfStmt :=
+    "if" "(" condition: Expression ")" consequent: Statement ElseClause?
+
+ElseClause :=
+    "else" Statement
+
+WhileStmt :=
+    "while" "(" condition: Expression ")" body: Statement
+
+ForStmt :=
+    "for" "(" ForInit? ";" condition: Expression? ";" update: Expression? ")" body: Statement
+
+ForInit :=
+    VarDecl | Expression
+
+ForOfStmt :=
+    "for" "(" VarKind Identifier "of" Expression ")" body: Statement
+
+ForInStmt :=
+    "for" "(" VarKind Identifier "in" Expression ")" body: Statement
+
+ReturnStmt :=
+    "return" Expression? ";"
+
+ThrowStmt :=
+    "throw" Expression ";"
+
+BreakStmt :=
+    "break" ";"
+
+ContinueStmt :=
+    "continue" ";"
+
+SwitchStmt :=
+    "switch" "(" discriminant: Expression ")" "{" SwitchCase* "}"
+
+SwitchCase :=
+    CaseClause | DefaultClause
+
+CaseClause :=
+    "case" test: Expression ":" Statement*
+
+DefaultClause :=
+    "default" ":" Statement*
+
+TryStmt :=
+    "try" Block CatchClause? FinallyClause?
+
+CatchClause :=
+    "catch" "(" param: Identifier ")" Block
+
+FinallyClause :=
+    "finally" Block
+
+# ── Class ────────────────────────────────────────────────────
+
+ClassDecl :=
+    "class" name: Identifier ExtendsClause? ClassBody
+
+ExtendsClause :=
+    "extends" Expression
+
+ClassBody :=
+    "{" ClassMember* "}"
+
+ClassMember :=
+    MethodDef | PropertyDef
+
+MethodDef :=
+    AsyncModifier? name: Identifier ParamList Block
+
+PropertyDef :=
+    name: Identifier Initializer? ";"
+
+# ── Import / Export ──────────────────────────────────────────
+
+ImportDecl :=
+    "import" ImportClause "from" source: String ";"
+
+ImportClause :=
+    NamedImports | DefaultImport | NamespaceImport
+
+NamedImports :=
+    "{" ImportSpecifier ImportSpecTail* "}"
+
+ImportSpecTail :=
+    "," ImportSpecifier
+
+ImportSpecifier :=
+    Identifier
+
+DefaultImport :=
+    Identifier
+
+NamespaceImport :=
+    "*" "as" Identifier
+
+ExportDecl :=
+    ExportDefault | ExportNamed | ExportReexport
+
+ExportDefault :=
+    "export" "default" Expression ";"
+
+ExportNamed :=
+    "export" Statement
+
+ExportReexport :=
+    "export" NamedImports "from" String ";"
+
+# ── Expressions ──────────────────────────────────────────────
+
+ExprStmt :=
+    Expression ";"
+
+Expression :=
+    AssignExpr
+
+AssignExpr :=
+    TernaryExpr AssignOp AssignExpr
+    | TernaryExpr
+
+AssignOp :=
+    "=" | "+=" | "-=" | "*=" | "/=" | "%=" | "&&=" | "||=" | "??="
+
+TernaryExpr :=
+    OrExpr "?" Expression ":" TernaryExpr
+    | OrExpr
+
+OrExpr :=
+    AndExpr OrTail*
+
+OrTail :=
+    "||" AndExpr
+
+AndExpr :=
+    NullishExpr AndTail*
+
+AndTail :=
+    "&&" NullishExpr
+
+NullishExpr :=
+    EqualityExpr NullishTail*
+
+NullishTail :=
+    "??" EqualityExpr
+
+EqualityExpr :=
+    CompareExpr EqualityTail*
+
+EqualityTail :=
+    EqualityOp CompareExpr
+
+EqualityOp :=
+    "==" | "!=" | "===" | "!=="
+
+CompareExpr :=
+    AddExpr CompareTail*
+
+CompareTail :=
+    CompareOp AddExpr
+
+CompareOp :=
+    "<" | ">" | "<=" | ">=" | "instanceof" | "in"
+
+AddExpr :=
+    MulExpr AddTail*
+
+AddTail :=
+    AddOp MulExpr
+
+AddOp :=
+    "+" | "-"
+
+MulExpr :=
+    UnaryExpr MulTail*
+
+MulTail :=
+    MulOp UnaryExpr
+
+MulOp :=
+    "*" | "/" | "%"
+
+UnaryExpr :=
+    UnaryOp UnaryExpr
+    | AwaitExpr
+    | PostfixExpr
+
+UnaryOp :=
+    "!" | "-" | "+" | "typeof" | "void" | "delete"
+
+AwaitExpr :=
+    "await" UnaryExpr
+
+PostfixExpr :=
+    PrimaryExpr PostfixOp*
+
+PostfixOp :=
+    CallArgs | MemberAccess | ComputedAccess | OptionalChain
+
+CallArgs :=
+    "(" ArgumentList? ")"
+
+ArgumentList :=
+    Expression ArgTail*
+
+ArgTail :=
+    "," Expression
+
+MemberAccess :=
+    "." Identifier
+
+ComputedAccess :=
+    "[" Expression "]"
+
+OptionalChain :=
+    "?." Identifier
+
+# ── Primary Expressions ─────────────────────────────────────
+
+PrimaryExpr :=
+    ArrowFunction | NewExpr | ArrayLiteral | ObjectLiteral | TemplateLiteral | ParenExpr | ThisExpr | Literal | Identifier
+
+ArrowFunction :=
+    ArrowParams "=>" ArrowBody
+
+ArrowParams :=
+    ParamList | Identifier
+
+ArrowBody :=
+    Block | Expression
+
+NewExpr :=
+    "new" PrimaryExpr CallArgs?
+
+ParenExpr :=
+    "(" Expression ")"
+
+ThisExpr :=
+    "this"
+
+# ── Literals ─────────────────────────────────────────────────
+
+Literal :=
+    String | Integer | Float | BoolLiteral | NullLiteral | UndefinedLiteral
+
+BoolLiteral :=
+    "true" | "false"
+
+NullLiteral :=
+    "null"
+
+UndefinedLiteral :=
+    "undefined"
+
+ArrayLiteral :=
+    "[" ArrayElements? "]"
+
+ArrayElements :=
+    Expression ArrayElemTail*
+
+ArrayElemTail :=
+    "," Expression
+
+ObjectLiteral :=
+    "{" ObjectProperties? "}"
+
+ObjectProperties :=
+    ObjectProperty ObjectPropTail*
+
+ObjectPropTail :=
+    "," ObjectProperty
+
+ObjectProperty :=
+    ComputedProperty | SpreadProperty | ShorthandProperty | KeyValueProperty
+
+KeyValueProperty :=
+    PropertyKey ":" Expression
+
+ComputedProperty :=
+    "[" Expression "]" ":" Expression
+
+SpreadProperty :=
+    "..." Expression
+
+ShorthandProperty :=
+    Identifier
+
+PropertyKey :=
+    Identifier | String | Integer
+
+TemplateLiteral :=
+    "`" TemplateSpan* "`"
+
+TemplateSpan :=
+    "${" Expression "}" | String

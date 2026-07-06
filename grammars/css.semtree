@@ -1,0 +1,292 @@
+language css
+
+keyword import
+keyword media
+keyword keyframes
+keyword font-face
+keyword charset
+keyword supports
+keyword layer
+keyword and
+keyword or
+keyword not
+keyword from
+keyword to
+keyword important
+
+# ── Top-Level ────────────────────────────────────────────────
+
+Stylesheet :=
+    TopLevelItem*
+
+TopLevelItem :=
+    AtRule | RuleSet | Comment
+
+Comment :=
+    "/*" String "*/"
+
+# ── At-Rules ─────────────────────────────────────────────────
+
+AtRule :=
+    ImportRule | MediaRule | KeyframesRule | FontFaceRule | CharsetRule | SupportsRule | LayerRule
+
+ImportRule :=
+    "@import" ImportTarget MediaQueryList? ";"
+
+ImportTarget :=
+    String | UrlFunction
+
+UrlFunction :=
+    "url" "(" String ")"
+
+CharsetRule :=
+    "@charset" String ";"
+
+# ── Media ────────────────────────────────────────────────────
+
+MediaRule :=
+    "@media" MediaQueryList "{" TopLevelItem* "}"
+
+MediaQueryList :=
+    MediaQuery MediaQueryTail*
+
+MediaQueryTail :=
+    "," MediaQuery
+
+MediaQuery :=
+    MediaModifier? MediaType MediaAndCondition*
+    | MediaCondition
+
+MediaModifier :=
+    "not" | "only"
+
+MediaType :=
+    Identifier
+
+MediaAndCondition :=
+    "and" MediaFeature
+
+MediaCondition :=
+    MediaFeature MediaConditionTail*
+
+MediaConditionTail :=
+    MediaConditionOp MediaFeature
+
+MediaConditionOp :=
+    "and" | "or"
+
+MediaFeature :=
+    "(" MediaFeatureContent ")"
+
+MediaFeatureContent :=
+    MediaRange | MediaPlain
+
+MediaPlain :=
+    Identifier MediaFeatureValue?
+
+MediaFeatureValue :=
+    ":" Value
+
+MediaRange :=
+    Identifier ComparisonOp Value
+
+ComparisonOp :=
+    "<" | ">" | "<=" | ">="
+
+# ── Keyframes ────────────────────────────────────────────────
+
+KeyframesRule :=
+    "@keyframes" name: Identifier "{" KeyframeBlock* "}"
+
+KeyframeBlock :=
+    KeyframeSelector KeyframeSelectorTail* "{" Declaration* "}"
+
+KeyframeSelectorTail :=
+    "," KeyframeSelector
+
+KeyframeSelector :=
+    "from" | "to" | Percentage
+
+# ── Font-Face ────────────────────────────────────────────────
+
+FontFaceRule :=
+    "@font-face" "{" Declaration* "}"
+
+# ── Supports ─────────────────────────────────────────────────
+
+SupportsRule :=
+    "@supports" SupportsCondition "{" TopLevelItem* "}"
+
+SupportsCondition :=
+    SupportsNot | SupportsAnd | SupportsOr | SupportsDecl
+
+SupportsNot :=
+    "not" SupportsDecl
+
+SupportsAnd :=
+    SupportsDecl "and" SupportsDecl
+
+SupportsOr :=
+    SupportsDecl "or" SupportsDecl
+
+SupportsDecl :=
+    "(" Declaration ")"
+
+# ── Layer ────────────────────────────────────────────────────
+
+LayerRule :=
+    "@layer" LayerName LayerBody
+
+LayerName :=
+    Identifier LayerNameTail*
+
+LayerNameTail :=
+    "." Identifier
+
+LayerBody :=
+    "{" TopLevelItem* "}" | ";"
+
+# ── Rule Sets ────────────────────────────────────────────────
+
+RuleSet :=
+    SelectorList "{" Declaration* "}"
+
+# ── Selectors ────────────────────────────────────────────────
+
+SelectorList :=
+    ComplexSelector SelectorListTail*
+
+SelectorListTail :=
+    "," ComplexSelector
+
+ComplexSelector :=
+    CompoundSelector CombinatorSelector*
+
+CombinatorSelector :=
+    Combinator CompoundSelector
+
+Combinator :=
+    ">" | "+" | "~" | ">>"
+
+CompoundSelector :=
+    SimpleSelector SimpleSelector*
+
+SimpleSelector :=
+    TypeSelector | UniversalSelector | ClassSelector | IdSelector | AttributeSelector | PseudoClassSelector | PseudoElementSelector
+
+TypeSelector :=
+    Identifier
+
+UniversalSelector :=
+    "*"
+
+ClassSelector :=
+    "." Identifier
+
+IdSelector :=
+    "#" Identifier
+
+AttributeSelector :=
+    "[" Identifier AttrMatcher? "]"
+
+AttrMatcher :=
+    AttrOp Value AttrFlags?
+
+AttrOp :=
+    "=" | "~=" | "|=" | "^=" | "$=" | "*="
+
+AttrFlags :=
+    Identifier
+
+PseudoClassSelector :=
+    ":" PseudoClassName PseudoArgs?
+
+PseudoClassName :=
+    Identifier
+
+PseudoArgs :=
+    "(" SelectorList ")"
+    | "(" AnPlusB ")"
+
+AnPlusB :=
+    Identifier
+
+PseudoElementSelector :=
+    "::" Identifier
+
+# ── Declarations ─────────────────────────────────────────────
+
+Declaration :=
+    property: Identifier ":" ValueList ImportantFlag? ";"
+
+ImportantFlag :=
+    "!" "important"
+
+ValueList :=
+    Value ValueListTail*
+
+ValueListTail :=
+    Value
+    | "," Value
+    | "/" Value
+
+# ── Values ───────────────────────────────────────────────────
+
+Value :=
+    FunctionValue | ColorHex | Dimension | Percentage | NumberValue | StringValue | IdentValue | VarFunction | CalcFunction
+
+FunctionValue :=
+    Identifier "(" FunctionArgs ")"
+
+FunctionArgs :=
+    Value FunctionArgTail*
+
+FunctionArgTail :=
+    "," Value
+
+VarFunction :=
+    "var" "(" CustomProperty VarFallback? ")"
+
+CustomProperty :=
+    "--" Identifier
+
+VarFallback :=
+    "," ValueList
+
+CalcFunction :=
+    "calc" "(" CalcExpr ")"
+
+CalcExpr :=
+    CalcTerm CalcExprTail*
+
+CalcExprTail :=
+    CalcOp CalcTerm
+
+CalcOp :=
+    "+" | "-" | "*" | "/"
+
+CalcTerm :=
+    CalcParen | Dimension | Percentage | NumberValue
+
+CalcParen :=
+    "(" CalcExpr ")"
+
+ColorHex :=
+    "#" Identifier
+
+Dimension :=
+    Float Identifier
+    | Integer Identifier
+
+Percentage :=
+    Float "%"
+    | Integer "%"
+
+NumberValue :=
+    Float | Integer
+
+StringValue :=
+    String
+
+IdentValue :=
+    Identifier

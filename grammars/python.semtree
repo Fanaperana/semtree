@@ -1,0 +1,534 @@
+language python
+
+keyword def
+keyword class
+keyword return
+keyword if
+keyword elif
+keyword else
+keyword while
+keyword for
+keyword in
+keyword import
+keyword from
+keyword as
+keyword with
+keyword try
+keyword except
+keyword finally
+keyword raise
+keyword pass
+keyword break
+keyword continue
+keyword assert
+keyword yield
+keyword lambda
+keyword and
+keyword or
+keyword not
+keyword is
+keyword True
+keyword False
+keyword None
+keyword del
+keyword global
+keyword nonlocal
+keyword async
+keyword await
+
+# ── Top-Level ────────────────────────────────────────────────
+
+Module :=
+    Statement*
+
+# ── Statements ───────────────────────────────────────────────
+
+Statement :=
+    DecoratedDef | FunctionDef | AsyncFunctionDef | ClassDef | IfStmt | WhileStmt | ForStmt | AsyncForStmt | WithStmt | AsyncWithStmt | TryStmt | ImportStmt | FromImport | ReturnStmt | RaiseStmt | AssertStmt | PassStmt | BreakStmt | ContinueStmt | DelStmt | GlobalStmt | NonlocalStmt | AssignStmt | AugAssignStmt | ExprStmt
+
+# ── Function ─────────────────────────────────────────────────
+
+DecoratedDef :=
+    Decorator+ DecoratedBody
+
+DecoratedBody :=
+    FunctionDef | AsyncFunctionDef | ClassDef
+
+Decorator :=
+    "@" Expression Newline
+
+FunctionDef :=
+    "def" name: Identifier ParamList ReturnAnnotation? ":" Suite
+
+AsyncFunctionDef :=
+    "async" "def" name: Identifier ParamList ReturnAnnotation? ":" Suite
+
+ReturnAnnotation :=
+    "->" TypeExpr
+
+ParamList :=
+    "(" ParamItems? ")"
+
+ParamItems :=
+    Param ParamTail*
+
+ParamTail :=
+    "," Param
+
+Param :=
+    StarParam | DoubleStarParam | SimpleParam
+
+SimpleParam :=
+    name: Identifier ParamAnnotation? DefaultValue?
+
+StarParam :=
+    "*" name: Identifier
+
+DoubleStarParam :=
+    "**" name: Identifier
+
+ParamAnnotation :=
+    ":" TypeExpr
+
+DefaultValue :=
+    "=" Expression
+
+# ── Type Expressions ─────────────────────────────────────────
+
+TypeExpr :=
+    TypeUnion
+
+TypeUnion :=
+    TypePrimary TypeUnionTail*
+
+TypeUnionTail :=
+    "|" TypePrimary
+
+TypePrimary :=
+    TypeSubscript | TypeAttr | TypeName
+
+TypeName :=
+    Identifier
+
+TypeSubscript :=
+    Identifier "[" TypeExpr TypeExprTail* "]"
+
+TypeExprTail :=
+    "," TypeExpr
+
+TypeAttr :=
+    Identifier "." Identifier
+
+# ── Class ────────────────────────────────────────────────────
+
+ClassDef :=
+    "class" name: Identifier BaseClasses? ":" Suite
+
+BaseClasses :=
+    "(" BaseClassList? ")"
+
+BaseClassList :=
+    Expression BaseClassTail*
+
+BaseClassTail :=
+    "," Expression
+
+Suite :=
+    INDENT Statement+ DEDENT
+
+INDENT :=
+    "INDENT"
+
+DEDENT :=
+    "DEDENT"
+
+Newline :=
+    "NEWLINE"
+
+# ── Control Flow ─────────────────────────────────────────────
+
+IfStmt :=
+    "if" condition: Expression ":" Suite ElifClause* ElseClause?
+
+ElifClause :=
+    "elif" condition: Expression ":" Suite
+
+ElseClause :=
+    "else" ":" Suite
+
+WhileStmt :=
+    "while" condition: Expression ":" Suite ElseClause?
+
+ForStmt :=
+    "for" target: Identifier "in" iter: Expression ":" Suite ElseClause?
+
+AsyncForStmt :=
+    "async" "for" target: Identifier "in" iter: Expression ":" Suite
+
+WithStmt :=
+    "with" WithItem WithItemTail* ":" Suite
+
+AsyncWithStmt :=
+    "async" "with" WithItem WithItemTail* ":" Suite
+
+WithItem :=
+    Expression AsClause?
+
+WithItemTail :=
+    "," WithItem
+
+AsClause :=
+    "as" Identifier
+
+# ── Exception Handling ───────────────────────────────────────
+
+TryStmt :=
+    "try" ":" Suite ExceptClause+ ElseClause? FinallyClause?
+
+ExceptClause :=
+    "except" ExceptType? ":" Suite
+
+ExceptType :=
+    Expression AsClause?
+
+FinallyClause :=
+    "finally" ":" Suite
+
+RaiseStmt :=
+    "raise" Expression? FromClause?
+
+FromClause :=
+    "from" Expression
+
+# ── Import ───────────────────────────────────────────────────
+
+ImportStmt :=
+    "import" DottedName ImportAlias?
+
+ImportAlias :=
+    "as" Identifier
+
+DottedName :=
+    Identifier DottedNameTail*
+
+DottedNameTail :=
+    "." Identifier
+
+FromImport :=
+    "from" DottedName "import" ImportNames
+
+ImportNames :=
+    StarImport | NamedImportList
+
+StarImport :=
+    "*"
+
+NamedImportList :=
+    ImportItem ImportItemTail*
+
+ImportItemTail :=
+    "," ImportItem
+
+ImportItem :=
+    Identifier ImportAlias?
+
+# ── Simple Statements ───────────────────────────────────────
+
+ReturnStmt :=
+    "return" Expression?
+
+AssertStmt :=
+    "assert" Expression AssertMsg?
+
+AssertMsg :=
+    "," Expression
+
+PassStmt :=
+    "pass"
+
+BreakStmt :=
+    "break"
+
+ContinueStmt :=
+    "continue"
+
+DelStmt :=
+    "del" Expression
+
+GlobalStmt :=
+    "global" Identifier IdentTail*
+
+NonlocalStmt :=
+    "nonlocal" Identifier IdentTail*
+
+IdentTail :=
+    "," Identifier
+
+AssignStmt :=
+    Target "=" Expression
+
+AugAssignStmt :=
+    Target AugOp Expression
+
+AugOp :=
+    "+=" | "-=" | "*=" | "/=" | "//=" | "%=" | "**=" | "&=" | "|=" | "^=" | ">>=" | "<<="
+
+Target :=
+    Identifier | AttrAccess | SubscriptExpr
+
+ExprStmt :=
+    Expression
+
+# ── Expressions ──────────────────────────────────────────────
+
+Expression :=
+    LambdaExpr | TernaryExpr
+
+LambdaExpr :=
+    "lambda" LambdaParams? ":" Expression
+
+LambdaParams :=
+    Identifier LambdaParamTail*
+
+LambdaParamTail :=
+    "," Identifier
+
+TernaryExpr :=
+    OrExpr IfSuffix?
+
+IfSuffix :=
+    "if" OrExpr "else" Expression
+
+OrExpr :=
+    AndExpr OrTail*
+
+OrTail :=
+    "or" AndExpr
+
+AndExpr :=
+    NotExpr AndTail*
+
+AndTail :=
+    "and" NotExpr
+
+NotExpr :=
+    "not" NotExpr
+    | CompareExpr
+
+CompareExpr :=
+    BitwiseOrExpr CompareTail*
+
+CompareTail :=
+    CompareOp BitwiseOrExpr
+
+CompareOp :=
+    "==" | "!=" | "<" | ">" | "<=" | ">=" | "in" | "not" "in" | "is" | "is" "not"
+
+BitwiseOrExpr :=
+    BitwiseXorExpr BitwiseOrTail*
+
+BitwiseOrTail :=
+    "|" BitwiseXorExpr
+
+BitwiseXorExpr :=
+    BitwiseAndExpr BitwiseXorTail*
+
+BitwiseXorTail :=
+    "^" BitwiseAndExpr
+
+BitwiseAndExpr :=
+    ShiftExpr BitwiseAndTail*
+
+BitwiseAndTail :=
+    "&" ShiftExpr
+
+ShiftExpr :=
+    AddExpr ShiftTail*
+
+ShiftTail :=
+    ShiftOp AddExpr
+
+ShiftOp :=
+    "<<" | ">>"
+
+AddExpr :=
+    MulExpr AddTail*
+
+AddTail :=
+    AddOp MulExpr
+
+AddOp :=
+    "+" | "-"
+
+MulExpr :=
+    UnaryExpr MulTail*
+
+MulTail :=
+    MulOp UnaryExpr
+
+MulOp :=
+    "*" | "/" | "//" | "%" | "@"
+
+UnaryExpr :=
+    UnaryOp UnaryExpr
+    | PowerExpr
+
+UnaryOp :=
+    "-" | "+" | "~"
+
+PowerExpr :=
+    AwaitExpr PowerSuffix?
+
+PowerSuffix :=
+    "**" UnaryExpr
+
+AwaitExpr :=
+    "await" PostfixExpr
+    | PostfixExpr
+
+PostfixExpr :=
+    PrimaryExpr PostfixOp*
+
+PostfixOp :=
+    CallArgs | SubscriptOp | AttrAccessOp
+
+CallArgs :=
+    "(" ArgumentList? ")"
+
+ArgumentList :=
+    Argument ArgTail*
+
+ArgTail :=
+    "," Argument
+
+Argument :=
+    StarArg | DoubleStarArg | KeywordArg | Expression
+
+StarArg :=
+    "*" Expression
+
+DoubleStarArg :=
+    "**" Expression
+
+KeywordArg :=
+    Identifier "=" Expression
+
+SubscriptOp :=
+    "[" SliceOrIndex "]"
+
+SliceOrIndex :=
+    Slice | Expression
+
+Slice :=
+    Expression? ":" Expression? SliceStep?
+
+SliceStep :=
+    ":" Expression?
+
+AttrAccessOp :=
+    "." Identifier
+
+AttrAccess :=
+    Identifier "." Identifier
+
+SubscriptExpr :=
+    Identifier "[" Expression "]"
+
+# ── Primary ──────────────────────────────────────────────────
+
+PrimaryExpr :=
+    ParenExpr | ListLiteral | DictLiteral | SetLiteral | ListComp | DictComp | SetComp | GeneratorExpr | FStringLiteral | YieldExpr | Literal | Identifier
+
+ParenExpr :=
+    "(" Expression TupleRest? ")"
+
+TupleRest :=
+    "," TupleElements?
+
+TupleElements :=
+    Expression TupleElemTail*
+
+TupleElemTail :=
+    "," Expression
+
+# ── Collection Literals ──────────────────────────────────────
+
+ListLiteral :=
+    "[" ListElements? "]"
+
+ListElements :=
+    Expression ListElemTail*
+
+ListElemTail :=
+    "," Expression
+
+DictLiteral :=
+    "{" DictEntries? "}"
+
+DictEntries :=
+    DictEntry DictEntryTail*
+
+DictEntryTail :=
+    "," DictEntry
+
+DictEntry :=
+    DictKV | DictUnpack
+
+DictKV :=
+    Expression ":" Expression
+
+DictUnpack :=
+    "**" Expression
+
+SetLiteral :=
+    "{" Expression SetElemTail+ "}"
+
+SetElemTail :=
+    "," Expression
+
+# ── Comprehensions ───────────────────────────────────────────
+
+ListComp :=
+    "[" Expression CompFor+ "]"
+
+DictComp :=
+    "{" Expression ":" Expression CompFor+ "}"
+
+SetComp :=
+    "{" Expression CompFor+ "}"
+
+GeneratorExpr :=
+    "(" Expression CompFor+ ")"
+
+CompFor :=
+    "for" Identifier "in" Expression CompIf*
+
+CompIf :=
+    "if" Expression
+
+# ── Special Expressions ─────────────────────────────────────
+
+YieldExpr :=
+    "yield" YieldValue?
+
+YieldValue :=
+    "from" Expression
+    | Expression
+
+FStringLiteral :=
+    "f\"" FStringPart* "\""
+
+FStringPart :=
+    "{" Expression FormatSpec? "}" | String
+
+FormatSpec :=
+    ":" String
+
+Literal :=
+    String | Integer | Float | BoolLiteral | NoneLiteral
+
+BoolLiteral :=
+    "True" | "False"
+
+NoneLiteral :=
+    "None"

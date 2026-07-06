@@ -1,0 +1,32 @@
+[package]
+name = "semtree_bench"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "semtree-bench"
+path = "src/main.rs"
+
+[dependencies]
+semtree_core.workspace = true
+semtree_red.workspace = true
+semtree_green.workspace = true
+semtree_parser.workspace = true
+semtree_grammar.workspace = true
+semtree_runtime.workspace = true
+semtree_semantic.workspace = true
+semtree_query.workspace = true
+semtree_format.workspace = true
+semtree_lint.workspace = true
+smol_str.workspace = true
+text-size.workspace = true
+
+tree-sitter = "0.24"
+tree-sitter-javascript = "0.23"
+tree-sitter-rust = "0.23"
+tree-sitter-json = "0.24"
+tree-sitter-css = "0.23"
+tree-sitter-python = "0.23"
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
