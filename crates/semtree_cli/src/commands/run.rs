@@ -1,13 +1,57 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use semtree_grammar::parse_semtree_dsl;
 use semtree_red::SyntaxNode;
 use semtree_runtime::RuntimeParser;
 use semtree_ts_import::import_tree_sitter_grammar;
 
-pub fn run(grammar_path: PathBuf, file: PathBuf, format: String) -> super::Result {
-    let grammar_src = std::fs::read_to_string(&grammar_path)?;
+const GRAMMAR_SEARCH_DIRS: &[&str] = &["grammars", "../grammars", "../../grammars"];
+
+fn detect_grammar_path(file: &Path, exe_dir: &Path) -> Option<PathBuf> {
+    let ext = file.extension()?.to_str()?;
+    let grammar_name = match ext {
+        "js" | "jsx" | "mjs" | "cjs" => "javascript",
+        "ts" | "tsx" => "javascript",
+        "py" | "pyw" => "python",
+        "rs" => "rust",
+        "css" | "scss" | "less" => "css",
+        "json" => "json",
+        "toml" => "toml",
+        _ => return None,
+    };
+    let filename = format!("{grammar_name}.semtree");
+
+    for search_dir in GRAMMAR_SEARCH_DIRS {
+        let candidate = PathBuf::from(search_dir).join(&filename);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    let exe_grammar = exe_dir.join("grammars").join(&filename);
+    if exe_grammar.exists() {
+        return Some(exe_grammar);
+    }
+
+    None
+}
+
+pub fn run(grammar_path: Option<PathBuf>, file: PathBuf, format: String, exe_dir: &Path) -> super::Result {
     let source = std::fs::read_to_string(&file)?;
+
+    let grammar_path = match grammar_path {
+        Some(p) => p,
+        None => detect_grammar_path(&file, exe_dir).ok_or_else(|| {
+            let ext = file.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+            format!(
+                "no grammar found for .{ext} files. Use -g to specify a grammar, or add one to grammars/{ext}.semtree\n\
+                 Supported: .js, .py, .rs, .css, .json, .toml"
+            )
+        })?,
+    };
+
+    eprintln!("Using grammar: {}", grammar_path.display());
+    let grammar_src = std::fs::read_to_string(&grammar_path)?;
 
     let grammar = if grammar_path
         .extension()

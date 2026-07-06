@@ -39,9 +39,9 @@ enum Commands {
 
     /// Parse a source file using a grammar definition (grammar-driven)
     Run {
-        /// Grammar file (.semtree or .json)
+        /// Grammar file (.semtree or .json). If omitted, auto-detects from file extension.
         #[arg(short, long)]
-        grammar: PathBuf,
+        grammar: Option<PathBuf>,
 
         /// Source file to parse
         file: PathBuf,
@@ -144,7 +144,7 @@ fn main() {
             grammar,
             file,
             format,
-        } => commands::run(grammar, file, format),
+        } => commands::run(grammar, file, format, &exe_dir()),
         Commands::Check { file } => commands::check(file),
         Commands::Format { file } => commands::format(file),
         Commands::Query { file, pattern } => commands::query(file, pattern),
@@ -162,4 +162,11 @@ fn main() {
         eprintln!("error: {e}");
         std::process::exit(1);
     }
+}
+
+fn exe_dir() -> PathBuf {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .unwrap_or_else(|| PathBuf::from("."))
 }
