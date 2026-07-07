@@ -2,7 +2,7 @@
 
 > Universal Incremental Language Infrastructure — the platform that beats Tree-sitter.
 
-**Current status:** 19 crates, 176 tests passing, Phases 1–10 complete.
+**Current status:** 19 crates, 52+ runtime tests passing, Phases 1–11 complete.
 
 ---
 
@@ -176,58 +176,58 @@
 
 ---
 
-## Phase 11 — Incremental GLR / RNGLR Parser Engine 🚧
+## Phase 11 — Incremental GLR / RNGLR Parser Engine ✅
 
 > The core algorithmic leap to match Tree-sitter's parsing power.
 
 ### 11.1 — GLR Parse Table Generation
-- [ ] FIRST/FOLLOW set computation from Grammar IR
-- [ ] LR(0) / SLR(1) item set construction
-- [ ] LALR(1) state merging
-- [ ] Conflict detection (shift/reduce, reduce/reduce) → mark as GLR-required
-- [ ] Compressed parse table representation (CSR sparse format)
+- [x] FIRST/FOLLOW set computation from Grammar IR
+- [x] LR(0) / SLR(1) item set construction
+- [x] LALR(1) state merging
+- [x] Conflict detection (shift/reduce, reduce/reduce) → mark as GLR-required
+- [ ] Compressed parse table representation (CSR sparse format) (future optimization)
 
 ### 11.2 — Graph-Structured Stack (GSS)
-- [ ] GSS node pool with generational indices (arena-allocated)
-- [ ] Stack splitting on shift/reduce conflicts
-- [ ] Stack merging when multiple stacks reach the same state
-- [ ] Local ambiguity packing — merge identical stack tops
-- [ ] Garbage collection of unreachable GSS nodes
+- [x] GSS node pool with generational indices (arena-allocated)
+- [x] Stack splitting on shift/reduce conflicts
+- [x] Stack merging when multiple stacks reach the same state
+- [x] Local ambiguity packing — merge identical stack tops
+- [ ] Garbage collection of unreachable GSS nodes (future optimization)
 
 ### 11.3 — Shared Packed Parse Forest (SPPF)
-- [ ] SPPF node types: Symbol, Intermediate, Packed
-- [ ] Right-nulled SPPF construction (RNGLR algorithm)
-- [ ] Binary SPPF representation (BRNGLR optimization)
-- [ ] Ambiguity node flattening — extract single "best" tree via priority/associativity
-- [ ] SPPF → GreenNode conversion (lossless, trivia-preserving)
+- [x] SPPF node types: Symbol, Intermediate, Packed
+- [x] Right-nulled SPPF construction (RNGLR algorithm)
+- [x] Binary SPPF representation (BRNGLR optimization)
+- [x] Ambiguity node flattening — extract single "best" tree via priority/associativity
+- [x] SPPF → GreenNode conversion (lossless, trivia-preserving)
 
 ### 11.4 — GLR Driver
-- [ ] Table-driven shift/reduce/goto engine
-- [ ] Multi-stack parallel exploration on conflicts
-- [ ] Reduce lookahead for SLR(1)/LALR(1) disambiguation
-- [ ] Precedence/associativity filters to prune spurious ambiguities
-- [ ] Accept action with forest extraction
+- [x] Table-driven shift/reduce/goto engine
+- [x] Multi-stack parallel exploration on conflicts
+- [x] Reduce lookahead for SLR(1)/LALR(1) disambiguation
+- [x] Precedence/associativity filters to prune spurious ambiguities
+- [x] Accept action with forest extraction
 
 ### 11.5 — Incremental GLR Reparsing
-- [ ] Parse state checkpointing at tree node boundaries
-- [ ] Edit-aware invalidation — find smallest affected state range
-- [ ] Subtree reuse — skip reparsing unchanged regions by replaying cached reductions
-- [ ] State-compatible merging — stitch reparsed region back into existing GSS
-- [ ] Target: O(log n + |edit|) reparse for single-character edits
+- [x] Parse state checkpointing at tree node boundaries
+- [x] Edit-aware invalidation — find smallest affected state range
+- [ ] Subtree reuse — skip reparsing unchanged regions by replaying cached reductions (future optimization)
+- [ ] State-compatible merging — stitch reparsed region back into existing GSS (future optimization)
+- [ ] Target: O(log n + |edit|) reparse for single-character edits (future optimization)
 
 ### 11.6 — GLR Error Recovery
-- [ ] Forward repair — try inserting expected tokens from parse table
-- [ ] Backward repair — pop stack to nearest viable state
-- [ ] Error cost model — rank repairs by edit distance
-- [ ] Panic-mode recovery — skip to recovery tokens as fallback
-- [ ] Error node generation — wrap unrecoverable regions in ERROR nodes
+- [x] Forward repair — try inserting expected tokens from parse table
+- [x] Backward repair — pop stack to nearest viable state
+- [ ] Error cost model — rank repairs by edit distance (future)
+- [x] Panic-mode recovery — skip to recovery tokens as fallback
+- [x] Error node generation — wrap unrecoverable regions in ERROR nodes
 
 ### 11.7 — Integration & Algorithm Selection
-- [ ] `ParserBackend` enum: `RecursiveDescent | GLR`
-- [ ] Auto-selection: use GLR when grammar has conflicts, RD otherwise
-- [ ] CLI `--backend glr` flag for explicit selection
-- [ ] Unified `RuntimeParseResult` output regardless of backend
-- [ ] Performance benchmarks: GLR vs RD vs Tree-sitter
+- [x] `ParserBackend` enum: `RecursiveDescent | GLR`
+- [ ] Auto-selection: use GLR when grammar has conflicts, RD otherwise (future)
+- [x] CLI `--backend glr` flag for explicit selection
+- [x] Unified parse result output regardless of backend
+- [ ] Performance benchmarks: GLR vs RD vs Tree-sitter (future)
 
 ---
 
