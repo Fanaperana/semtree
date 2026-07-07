@@ -95,12 +95,14 @@ pub fn run(grammar_path: Option<PathBuf>, file: PathBuf, format: String, exe_dir
             print_sexp(&root, &names);
             println!();
         }
+        "sexp-pretty" => print_sexp_pretty(&root, 0, &names),
+        "inspect" => print_inspect(&root, 0, &names),
         "json" => {
             let json = tree_to_json(&root, &names);
             println!("{}", serde_json::to_string_pretty(&json)?);
         }
         _ => {
-            return Err(format!("unknown format: {format}. Use tree, sexp, or json").into());
+            return Err(format!("unknown format: {format}. Use tree, sexp, sexp-pretty, inspect, or json").into());
         }
     }
 
@@ -140,6 +142,76 @@ fn print_tree(node: &SyntaxNode, indent: usize, names: &FxHashMap<SyntaxKind, Sm
             semtree_red::SyntaxElement::Token(t) => {
                 let tp = "  ".repeat(indent + 1);
                 println!("{tp}{}@{:?} {:?}", kind_name(t.kind(), names), t.text_range(), t.text());
+            }
+        }
+    }
+}
+
+/// Prettified S-expression: indented, one node per line, with byte ranges.
+fn print_sexp_pretty(node: &SyntaxNode, indent: usize, names: &FxHashMap<SyntaxKind, SmolStr>) {
+    let prefix = "  ".repeat(indent);
+    let range = node.text_range();
+    let name = kind_name(node.kind(), names);
+
+    let children: Vec<_> = node.children_with_tokens().into_iter().collect();
+    if children.is_empty() {
+        println!("{prefix}({name}) [{}..{}]", u32::from(range.start()), u32::from(range.end()));
+        return;
+    }
+
+    // Check if all children are tokens (leaf node with only tokens).
+    let all_tokens = children.iter().all(|c| matches!(c, semtree_red::SyntaxElement::Token(_)));
+
+    if all_tokens && children.len() <= 3 {
+        print!("{prefix}({name}");
+        for child in &children {
+            if let semtree_red::SyntaxElement::Token(t) = child {
+                let tk = kind_name(t.kind(), names);
+                let text = t.text();
+                if tk == "whitespace" || tk == "newline" {
+                    continue;
+                }
+                print!(" ({tk} {text:?})");
+            }
+        }
+        println!(") [{}..{}]", u32::from(range.start()), u32::from(range.end()));
+        return;
+    }
+
+    println!("{prefix}({name} [{}..{}]", u32::from(range.start()), u32::from(range.end()));
+    for child in &children {
+        match child {
+            semtree_red::SyntaxElement::Node(n) => print_sexp_pretty(&n, indent + 1, names),
+            semtree_red::SyntaxElement::Token(t) => {
+                let tk = kind_name(t.kind(), names);
+                let text = t.text();
+                if tk == "whitespace" || tk == "newline" {
+                    continue;
+                }
+                let tp = "  ".repeat(indent + 1);
+                let tr = t.text_range();
+                println!("{tp}({tk} {text:?}) [{}..{}]", u32::from(tr.start()), u32::from(tr.end()));
+            }
+        }
+    }
+    println!("{prefix})");
+}
+
+/// Machine-readable inspect format: each line is "DEPTH|START|END|KIND|TEXT_OR_EMPTY".
+/// Used by editor integrations for interactive tree navigation with highlighting.
+fn print_inspect(node: &SyntaxNode, depth: usize, names: &FxHashMap<SyntaxKind, SmolStr>) {
+    let range = node.text_range();
+    let name = kind_name(node.kind(), names);
+    println!("{}|{}|{}|{}|", depth, u32::from(range.start()), u32::from(range.end()), name);
+
+    for child in node.children_with_tokens() {
+        match child {
+            semtree_red::SyntaxElement::Node(n) => print_inspect(&n, depth + 1, names),
+            semtree_red::SyntaxElement::Token(t) => {
+                let tk = kind_name(t.kind(), names);
+                let tr = t.text_range();
+                let text = t.text().replace('\n', "\\n").replace('\r', "\\r");
+                println!("{}|{}|{}|{}|{}", depth + 1, u32::from(tr.start()), u32::from(tr.end()), tk, text);
             }
         }
     }

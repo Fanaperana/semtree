@@ -49,13 +49,29 @@ Once installed, you get these commands:
 
 | Command | What it does |
 |---------|-------------|
-| `:SemTreeParse` | Parse current file, show S-expression tree in split |
+| `:SemTreeInspect` | **Interactive tree inspector** — navigate nodes, highlights source in real time |
+| `:SemTreeParse` | Parse current file, show prettified S-expression tree in split |
 | `:SemTreeParse tree` | Parse with indented tree format |
 | `:SemTreeParse json` | Parse with JSON output |
 | `:SemTreeTree` | Shortcut for `:SemTreeParse tree` |
 | `:SemTreeSymbols` | Show all symbols (functions, variables, types) |
 | `:SemTreeLint` | Lint current file, show diagnostics |
 | `:SemTreeFormat` | Format current file |
+
+### SemTreeInspect (Interactive Tree Inspector)
+
+This is the flagship feature, similar to tree-sitter's `:InspectTree`. It opens
+the syntax tree in a side panel, and as you navigate with `j`/`k`, the
+corresponding source code is highlighted in real time.
+
+**Keybindings in the inspector:**
+
+| Key | Action |
+|-----|--------|
+| `j`/`k` | Navigate tree nodes (highlights source automatically) |
+| `Enter` | Jump cursor to the source location of the node |
+| `q` | Close the inspector |
+| `?` | Show help |
 
 ## Step 3: Try it on a Python file
 
@@ -86,6 +102,7 @@ nvim examples/demo.toml   # then :SemTreeParse
 Add these to your `mappings.lua`:
 
 ```lua
+vim.keymap.set("n", "<leader>si", "<cmd>SemTreeInspect<cr>", { desc = "SemTree Inspector" })
 vim.keymap.set("n", "<leader>sp", "<cmd>SemTreeParse<cr>", { desc = "SemTree Parse" })
 vim.keymap.set("n", "<leader>st", "<cmd>SemTreeTree<cr>", { desc = "SemTree Tree" })
 vim.keymap.set("n", "<leader>ss", "<cmd>SemTreeSymbols<cr>", { desc = "SemTree Symbols" })

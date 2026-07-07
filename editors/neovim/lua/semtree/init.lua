@@ -8,6 +8,8 @@ M.config = {
     lint_on_save = false,
 }
 
+local inspector = require("semtree.inspector")
+
 function M.setup(opts)
     M.config = vim.tbl_deep_extend("force", M.config, opts or {})
 
@@ -19,10 +21,17 @@ function M.setup(opts)
 
     vim.api.nvim_create_user_command("SemTreeParse", function(args)
         M.parse_buffer(args)
-    end, { nargs = "?" })
+    end, {
+        nargs = "?",
+        complete = function() return { "sexp", "sexp-pretty", "tree", "json" } end,
+    })
 
     vim.api.nvim_create_user_command("SemTreeTree", function()
         M.show_tree()
+    end, {})
+
+    vim.api.nvim_create_user_command("SemTreeInspect", function()
+        inspector.open(M.config)
     end, {})
 
     vim.api.nvim_create_user_command("SemTreeSymbols", function()
@@ -50,14 +59,18 @@ function M.parse_buffer(args)
         vim.notify("Buffer has no file", vim.log.levels.ERROR)
         return
     end
-    local format = (args and args.args ~= "") and args.args or "sexp"
+    local format = (args and args.args ~= "") and args.args or "sexp-pretty"
     local cmd = string.format("%s run %s -f %s", M.config.binary_path, vim.fn.shellescape(file), format)
     local output = vim.fn.system(cmd)
 
     vim.cmd("vnew")
-    vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(output, "\n"))
-    vim.bo.buftype = "nofile"
-    vim.bo.filetype = "semtree-tree"
+    local buf = vim.api.nvim_get_current_buf()
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(output, "\n"))
+    vim.bo[buf].buftype = "nofile"
+    vim.bo[buf].bufhidden = "wipe"
+    vim.bo[buf].swapfile = false
+    vim.bo[buf].filetype = "semtree-tree"
+    vim.api.nvim_buf_set_name(buf, "SemTree: " .. vim.fn.fnamemodify(file, ":t"))
 end
 
 function M.show_tree()
