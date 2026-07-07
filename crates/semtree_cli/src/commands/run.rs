@@ -4,7 +4,7 @@ use rustc_hash::FxHashMap;
 use semtree_core::SyntaxKind;
 use semtree_grammar::parse_semtree_dsl;
 use semtree_red::SyntaxNode;
-use semtree_runtime::RuntimeParser;
+use semtree_runtime::{RuntimeParser, GlrParser};
 use semtree_ts_import::import_tree_sitter_grammar;
 use smol_str::SmolStr;
 
@@ -39,7 +39,7 @@ fn detect_grammar_path(file: &Path, exe_dir: &Path) -> Option<PathBuf> {
     None
 }
 
-pub fn run(grammar_path: Option<PathBuf>, file: PathBuf, format: String, exe_dir: &Path) -> super::Result {
+pub fn run(grammar_path: Option<PathBuf>, file: PathBuf, format: String, exe_dir: &Path, backend: &str) -> super::Result {
     let source = std::fs::read_to_string(&file)?;
 
     let grammar_path = match grammar_path {
@@ -66,19 +66,37 @@ pub fn run(grammar_path: Option<PathBuf>, file: PathBuf, format: String, exe_dir
         parse_semtree_dsl(&grammar_src).map_err(|e| format!("failed to parse grammar: {e}"))?
     };
 
-    let parser = RuntimeParser::new(grammar);
-    let result = parser.parse(&source);
-
-    let names = &result.kind_names;
+    let (root, names, errors, extra_info) = match backend {
+        "glr" => {
+            let parser = GlrParser::new(grammar);
+            eprintln!(
+                "GLR parser: {} states, conflicts: {}",
+                parser.state_count(),
+                if parser.has_conflicts() { "yes" } else { "no" }
+            );
+            let result = parser.parse(&source);
+            let extra = if result.is_ambiguous() {
+                format!(" ({} ambiguities detected)", result.ambiguity_count)
+            } else {
+                String::new()
+            };
+            (result.syntax(), result.kind_names, result.errors, extra)
+        }
+        "rd" | _ => {
+            let parser = RuntimeParser::new(grammar);
+            let result = parser.parse(&source);
+            (result.syntax(), result.kind_names, result.errors, String::new())
+        }
+    };
 
     match format.as_str() {
-        "tree" => print_tree(&result.syntax(), 0, names),
+        "tree" => print_tree(&root, 0, &names),
         "sexp" => {
-            print_sexp(&result.syntax(), names);
+            print_sexp(&root, &names);
             println!();
         }
         "json" => {
-            let json = tree_to_json(&result.syntax(), names);
+            let json = tree_to_json(&root, &names);
             println!("{}", serde_json::to_string_pretty(&json)?);
         }
         _ => {
@@ -86,9 +104,13 @@ pub fn run(grammar_path: Option<PathBuf>, file: PathBuf, format: String, exe_dir
         }
     }
 
-    if !result.errors.is_empty() {
-        eprintln!("\n--- {} error(s) ---", result.errors.len());
-        for err in &result.errors {
+    if !extra_info.is_empty() {
+        eprintln!("{extra_info}");
+    }
+
+    if !errors.is_empty() {
+        eprintln!("\n--- {} error(s) ---", errors.len());
+        for err in &errors {
             eprintln!("  {err}");
         }
     }

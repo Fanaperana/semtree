@@ -49,6 +49,10 @@ enum Commands {
         /// Output format: tree, json, or sexp
         #[arg(short, long, default_value = "tree")]
         format: String,
+
+        /// Parser backend: rd (recursive descent) or glr
+        #[arg(long, default_value = "rd")]
+        backend: String,
     },
 
     /// Check a grammar definition for errors
@@ -144,7 +148,8 @@ fn main() {
             grammar,
             file,
             format,
-        } => commands::run(grammar, file, format, &exe_dir()),
+            backend,
+        } => commands::run(grammar, file, format, &exe_dir(), &backend),
         Commands::Check { file } => commands::check(file),
         Commands::Format { file } => commands::format(file),
         Commands::Query { file, pattern } => commands::query(file, pattern),
