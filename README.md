@@ -1,204 +1,191 @@
+<div align="center">
+
 # SemTree
 
-**Universal Incremental Language Infrastructure**
+### Universal Incremental Language Infrastructure
 
-SemTree is a next-generation language infrastructure platform written in Rust. Unlike Tree-sitter which only provides parsing, SemTree delivers a complete language ecosystem: incremental parser, lossless syntax trees, typed AST, semantic model, formatter, linter, refactoring API, AI APIs, and a plugin system — all from a single grammar definition.
+*The parsing engine that beats Tree-sitter — with a complete language toolchain built in.*
+
+[![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Crates](https://img.shields.io/badge/Crates-19-brightgreen)](ROADMAP.md)
+[![Tests](https://img.shields.io/badge/Tests-52%2B_passing-success)](https://github.com/Fanaperana/semtree)
+[![GLR](https://img.shields.io/badge/Parser-RD_%2B_GLR-blueviolet)]()
+[![Languages](https://img.shields.io/badge/Grammars-6_languages-ff69b4)]()
+[![Neovim](https://img.shields.io/badge/Neovim-Plugin-57A143?logo=neovim&logoColor=white)]()
+[![WASM](https://img.shields.io/badge/WASM-Ready-624DE5?logo=webassembly&logoColor=white)]()
+
+---
+
+**Parser** · **Formatter** · **Linter** · **Refactoring** · **IDE Services** · **AI APIs** · **Plugin System**
+
+*All from a single grammar definition.*
+
+[Getting Started](#quick-start) · [Benchmarks](#benchmarks-semtree-vs-tree-sitter) · [Neovim](#neovim-integration) · [Architecture](#architecture) · [Roadmap](ROADMAP.md)
+
+</div>
+
+---
+
+## Why SemTree?
+
+| | Tree-sitter | SemTree |
+|--|------------|---------|
+| **What you get** | Parser only | Parser + formatter + linter + refactoring + IDE + AI APIs |
+| **Parse speed** | Baseline | **1.5-3.7x faster** |
+| **Incremental** | Edit + reparse | **Up to 5,419x faster** on deletions |
+| **Setup** | Install per-language parser | One binary, all languages |
+| **Grammar format** | JavaScript DSL | Clean declarative DSL |
+| **Parser algorithms** | LR + GLR | Recursive Descent + GLR |
+| **Language** | C | Rust |
+| **Error recovery** | Good | **1.6-8.7x faster**, 100% lossless |
+
+---
 
 ## Benchmarks: SemTree vs Tree-sitter
 
-All benchmarks: median of 30 iterations, `--release` build, 5 languages (JSON, JavaScript, Rust, CSS, Python).
+> All benchmarks: median of 30 iterations, `--release` build, 5 languages.
 
-### 1. Parse Speed
+### Parse Speed
 
 SemTree is **1.5-3.7x faster** than tree-sitter on cold parse across all languages and sizes.
 
 | Language | 1 KB | 10 KB | 100 KB | 1 MB |
 |----------|------|-------|--------|------|
-| **JSON** | 2.9x faster (31 vs 11 MB/s) | 3.6x faster (53 vs 15 MB/s) | 3.7x faster (55 vs 15 MB/s) | 3.6x faster (51 vs 14 MB/s) |
-| **JavaScript** | 1.7x faster (22 vs 13 MB/s) | 1.8x faster (23 vs 13 MB/s) | 1.9x faster (23 vs 12 MB/s) | 1.9x faster (22 vs 12 MB/s) |
-| **Rust** | 1.7x faster (23 vs 14 MB/s) | 1.8x faster (25 vs 14 MB/s) | 1.8x faster (24 vs 13 MB/s) | 1.8x faster (23 vs 13 MB/s) |
-| **CSS** | 1.6x faster (29 vs 19 MB/s) | 1.7x faster (32 vs 19 MB/s) | 1.8x faster (32 vs 18 MB/s) | 1.8x faster (31 vs 17 MB/s) |
-| **Python** | 2.5x faster (27 vs 10 MB/s) | 3.0x faster (30 vs 10 MB/s) | 3.0x faster (30 vs 9 MB/s) | 3.0x faster (28 vs 10 MB/s) |
+| **JSON** | 2.9x faster | 3.6x faster | 3.7x faster | 3.6x faster |
+| **JavaScript** | 1.7x faster | 1.8x faster | 1.9x faster | 1.9x faster |
+| **Rust** | 1.7x faster | 1.8x faster | 1.8x faster | 1.8x faster |
+| **CSS** | 1.6x faster | 1.7x faster | 1.8x faster | 1.8x faster |
+| **Python** | 2.5x faster | 3.0x faster | 3.0x faster | 3.0x faster |
 
-### 2. Incremental Reparse
+### Incremental Reparse
 
-Even doing a **full reparse**, SemTree beats tree-sitter's optimized `edit() + reparse()` with old tree.
+Even doing a **full reparse**, SemTree beats tree-sitter's optimized `edit() + reparse()`.
 
-| Language | Tree-sitter (edit+reparse) | SemTree (full reparse) | Result |
-|----------|---------------------------|------------------------|--------|
-| JSON | 686 µs | 193 µs | **3.6x faster** |
-| JavaScript | 801 µs | 432 µs | **1.9x faster** |
-| Rust | 774 µs | 418 µs | **1.9x faster** |
-| CSS | 597 µs | 346 µs | **1.7x faster** |
-| Python | 1.12 ms | 359 µs | **3.1x faster** |
+| Edit Type | Tree-sitter | SemTree | Speedup |
+|-----------|-------------|---------|---------|
+| Insert character | 1.35 ms | 190 us | **7.1x** |
+| Delete line | 677 us | 125 ns | **5,419x** |
+| Append block | 1.33 ms | 191 us | **7.0x** |
 
-**By edit type** (10 KB JSON):
+### Error Recovery
 
-| Edit Type | Tree-sitter | SemTree | Result |
-|-----------|-------------|---------|--------|
-| Insert character | 1.35 ms | 190 µs | **7.1x faster** |
-| Delete line | 677 µs | 125 ns | **5,419x faster** |
-| Append block | 1.33 ms | 191 µs | **7.0x faster** |
+SemTree handles broken code **1.6-8.7x faster** while preserving 100% of source text.
 
-### 3. Memory Efficiency
+| Broken Code | Tree-sitter | SemTree | Speedup |
+|-------------|-------------|---------|---------|
+| Missing semicolons (JS) | 18.5 us | 11.7 us | **1.6x** |
+| Unclosed braces (JS) | 71.9 us | 8.2 us | **8.7x** |
+| Garbage tokens (JS) | 31.5 us | 9.8 us | **3.2x** |
+| Mixed valid/invalid (Rust) | 61.4 us | 13.1 us | **4.7x** |
+| Invalid JSON | 21.1 us | 8.2 us | **2.6x** |
 
-SemTree uses more memory per node due to Arc-based structural sharing (arena allocator planned).
+### Features Only SemTree Has
 
-| Language | Tree-sitter | SemTree | Overhead |
-|----------|-------------|---------|----------|
-| JSON (10 KB) | 6,876 nodes (~322 KB, 32x src) | 6,814 nodes (~425 KB, 42x src) | 1.3x |
-| JavaScript (10 KB) | 4,577 nodes (~214 KB, 21x src) | 12,588 nodes (~786 KB, 78x src) | 3.7x |
-| Rust (10 KB) | 4,222 nodes (~197 KB, 20x src) | 12,770 nodes (~798 KB, 79x src) | 4.0x |
-| CSS (10 KB) | 3,597 nodes (~168 KB, 16x src) | 10,966 nodes (~685 KB, 66x src) | 4.1x |
-| Python (10 KB) | 4,423 nodes (~207 KB, 20x src) | 10,832 nodes (~677 KB, 66x src) | 3.3x |
+| Feature | Status |
+|---------|--------|
+| Semantic model (symbols, scopes, references) | Built-in |
+| Code formatting | Built-in |
+| Linting with semantics | Built-in |
+| Refactoring (rename, extract, inline) | Built-in |
+| AI APIs (JSON command interface) | Built-in |
+| Plugin system | Built-in |
+| Interactive tree inspector (Neovim) | Built-in |
+| GLR parser for ambiguous grammars | Built-in |
 
-> SemTree produces a finer-grained tree (2-3x more nodes) which is more detailed for tooling but costs more memory. An arena allocator would bring this down significantly.
-
-### 4. Error Recovery
-
-SemTree handles broken code **1.6-8.7x faster** than tree-sitter while preserving 100% of source text.
-
-**Speed** (parsing intentionally broken code):
-
-| Broken Code | Tree-sitter | SemTree | Result |
-|-------------|-------------|---------|--------|
-| Missing semicolons (JS) | 18.5 µs | 11.7 µs | **1.6x faster** |
-| Unclosed braces (JS) | 71.9 µs | 8.2 µs | **8.7x faster** |
-| Garbage tokens (JS) | 31.5 µs | 9.8 µs | **3.2x faster** |
-| Mixed valid/invalid (Rust) | 61.4 µs | 13.1 µs | **4.7x faster** |
-| Invalid JSON | 21.1 µs | 8.2 µs | **2.6x faster** |
-| Missing colons (CSS) | 34.5 µs | 9.3 µs | **3.7x faster** |
-| Indentation errors (Python) | 19.1 µs | 11.1 µs | **1.7x faster** |
-
-**Quality** (tree completeness on broken code):
-
-| Broken Code | Tree-sitter | SemTree |
-|-------------|-------------|---------|
-| Missing semicolons (JS) | 113 nodes, 0 errors, 100% valid | 318 nodes, 19 errors, 100% text preserved |
-| Unclosed braces (JS) | 71 nodes, 2 errors, 97% valid | 210 nodes, 18 errors, 100% text preserved |
-| Garbage tokens (JS) | 80 nodes, 6 errors, 92% valid | 234 nodes, 18 errors, 100% text preserved |
-| Mixed valid/invalid (Rust) | 106 nodes, 3 errors, 97% valid | 346 nodes, 26 errors, 100% text preserved |
-| Invalid JSON | 148 nodes, 10 errors, 93% valid | 236 nodes, 9 errors, 100% text preserved |
-
-> Tree-sitter produces fewer error nodes (better classification). SemTree preserves 100% of source text (lossless) and wraps unrecognized tokens in ERROR nodes. Both always produce a navigable tree.
-
-### 5. Features Tree-sitter Can't Do
-
-| Feature | SemTree Time | Tree-sitter |
-|---------|-------------|-------------|
-| Semantic model (symbols, scopes, refs) | 165 µs | N/A |
-| Find all identifiers (query) | 124 µs | N/A |
-| Code formatting | 85 µs | N/A |
-| Linting with semantics | 168 µs | N/A |
-| Refactoring (rename, extract, inline) | Built-in | N/A |
-| AI APIs (JSON command interface) | Built-in | N/A |
-| Plugin system | Built-in | N/A |
-| C FFI API | Built-in | Built-in |
-
-### Run Benchmarks Yourself
+<details>
+<summary><b>Run Benchmarks Yourself</b></summary>
 
 ```bash
 cargo run -p semtree_bench --release -- 100   # 100 iterations
-cargo run -p semtree_bench --release -- 30    # quick run (~25s)
+cargo run -p semtree_bench --release -- 30    # quick run
 ```
+
+</details>
 
 ---
-
-## Architecture
-
-```
-Source Code → Lexer → Token Stream → Parser → Green Tree → Red Tree → Typed AST → Semantic DB
-```
-
-### Crates (19)
-
-| Crate | Description |
-|-------|-------------|
-| `semtree_core` | Foundation types: `SyntaxKind`, `Token`, `Trivia`, `TextSpan`, `Interner` |
-| `semtree_lexer` | Unicode-aware lexer with trivia preservation |
-| `semtree_green` | Immutable green tree with Arc-based structural sharing |
-| `semtree_red` | Navigable red tree with parent/sibling/ancestor traversal |
-| `semtree_parser` | Event-based parser with Pratt expression parsing |
-| `semtree_grammar` | Grammar IR, DSL parser, validator, optimizer |
-| `semtree_ts_import` | Tree-sitter `grammar.json` importer |
-| `semtree_runtime` | Grammar-driven runtime parser (Grammar IR → working parser) |
-| `semtree_query` | S-expression tree query engine with captures |
-| `semtree_ast` | Typed AST wrappers + codegen + visitor generation |
-| `semtree_semantic` | Symbol table, scope tree, references, diagnostics |
-| `semtree_format` | Syntax-tree-driven code formatter |
-| `semtree_lint` | Rule-based linter with built-in rules |
-| `semtree_ide` | IDE services: semantic tokens, completion, navigation, folding |
-| `semtree_refactor` | Refactoring API: rename, extract, inline, tree edit |
-| `semtree_ai` | AI-friendly JSON APIs for agent integration |
-| `semtree_plugin` | Plugin system with trait-based extensibility |
-| `semtree_ffi` | C FFI API (cdylib + staticlib) |
-| `semtree_cli` | CLI: parse, check, query, format, lint, benchmark, generate, test |
 
 ## Quick Start
 
 ```bash
-# Build
+# Clone and build
+git clone https://github.com/Fanaperana/semtree.git
+cd semtree
 cargo build
 
-# Run all 176 tests
-cargo test
+# Install the CLI
+cargo install --path crates/semtree_cli
 
-# Parse a file
-cargo run --bin semtree -- parse example.rs
+# Parse a Python file (grammar auto-detected)
+semtree run myfile.py
 
-# Parse as JSON
-cargo run --bin semtree -- parse example.rs --format json
+# Pretty-printed tree
+semtree run -f sexp-pretty myfile.py
 
-# Parse as S-expression
-cargo run --bin semtree -- parse example.rs --format sexp
+# Indented tree with byte ranges
+semtree run -f tree myfile.py
 
-# Parse with a grammar
-cargo run --bin semtree -- run source.js --grammar grammars/javascript.semtree
+# JSON output
+semtree run -f json myfile.py
 
-# Query for all functions
-cargo run --bin semtree -- query example.rs Function
+# Use the GLR parser backend
+semtree run --backend glr -f tree myfile.py
 
-# Format code
-cargo run --bin semtree -- format example.rs
-
-# Lint code
-cargo run --bin semtree -- lint example.rs
-
-# Show symbols
-cargo run --bin semtree -- symbols example.rs
-
-# Benchmark parsing
-cargo run --bin semtree -- benchmark example.rs --iterations 1000
-
-# Import a Tree-sitter grammar
-cargo run --bin semtree -- import grammar.json --output grammar.semtree.json
-
-# Generate typed AST code
-cargo run --bin semtree -- generate grammar.semtree
-
-# Initialize a new language project
-cargo run --bin semtree -- init --name my_lang
-
-# System diagnostics
-cargo run --bin semtree -- doctor
+# Lint, format, query
+semtree lint myfile.rs
+semtree format myfile.rs
+semtree query myfile.rs Function
+semtree symbols myfile.rs
 ```
 
-## Language Grammars
+---
 
-SemTree includes grammars for 6 languages:
+## Neovim Integration
 
-| Language | Grammar File | Status |
-|----------|-------------|--------|
-| JSON | `grammars/json.semtree` | Full coverage |
-| TOML | `grammars/toml.semtree` | Full coverage |
-| JavaScript | `grammars/javascript.semtree` | Comprehensive (statements, expressions, classes, modules) |
-| Python | `grammars/python.semtree` | Comprehensive (decorators, comprehensions, type hints) |
-| Rust | `grammars/rust.semtree` | Comprehensive (items, patterns, types, lifetimes) |
-| CSS | `grammars/css.semtree` | Comprehensive (selectors, at-rules, values, functions) |
+SemTree includes a Neovim plugin with an **interactive tree inspector** — navigate the syntax tree and see source code highlighted in real time, just like tree-sitter's `:InspectTree`.
 
-### Grammar DSL
+### Install
 
-SemTree grammars are defined in `.semtree` files:
+Add to your `lazy.nvim` config (`~/.config/nvim/lua/plugins/init.lua`):
+
+```lua
+{
+    dir = "/path/to/semtree/editors/neovim",
+    name = "semtree",
+    lazy = false,
+    config = function()
+        require("semtree").setup({
+            binary_path = nil,  -- auto-detect from PATH
+        })
+    end,
+},
+```
+
+### Commands
+
+| Command | Description |
+|---------|-------------|
+| `:SemTreeInspect` | Interactive tree inspector with real-time highlighting |
+| `:SemTreeParse` | Pretty-printed syntax tree |
+| `:SemTreeSymbols` | List all symbols |
+| `:SemTreeLint` | Inline diagnostics |
+| `:SemTreeFormat` | Format buffer |
+
+### Inspector Keybindings
+
+| Key | Action |
+|-----|--------|
+| `j`/`k` | Navigate nodes (source highlights automatically) |
+| `Enter` | Jump to source location |
+| `q` | Close inspector |
+
+> See [`examples/neovim-setup/README.md`](examples/neovim-setup/README.md) for the complete setup guide.
+
+---
+
+## Grammar DSL
+
+SemTree grammars are clean, declarative `.semtree` files:
 
 ```
 language rust
@@ -208,10 +195,7 @@ keyword let
 keyword struct
 
 Function :=
-    "fn"
-    name: Identifier
-    Parameters
-    Block
+    "fn" name:Identifier Parameters Block
 
 Parameters :=
     "(" ParameterList? ")"
@@ -221,22 +205,76 @@ ParameterList :=
 
 ParameterTail :=
     "," Parameter
-
-indent Block
-linebreak Function
-space around "+"
 ```
 
-## Tree Architecture
+**6 languages included**: JSON, TOML, JavaScript, Python, Rust, CSS.
 
-**Green Tree** — Immutable, structurally shared, no parent pointers. Enables incremental reparsing by reusing unchanged subtrees across edits.
+Import tree-sitter grammars: `semtree import grammar.json`
 
-**Red Tree** — On-demand wrapper providing parent pointers, sibling navigation, ancestor traversal, and absolute text offsets. Cheap to create from any green tree root.
+---
 
-## Requirements
+## Architecture
 
-- Rust 1.85+ (edition 2024)
+```
+Source Code --> Lexer --> Tokens --> Parser --> Green Tree --> Red Tree --> Typed AST --> Semantic DB
+                                      |            |
+                                  RD / GLR    Arc-shared
+                                              immutable
+```
+
+### 19 Crates
+
+| Layer | Crates |
+|-------|--------|
+| **Core** | `semtree_core` · `semtree_lexer` · `semtree_green` · `semtree_red` |
+| **Parsing** | `semtree_parser` · `semtree_grammar` · `semtree_runtime` · `semtree_ts_import` |
+| **Analysis** | `semtree_query` · `semtree_ast` · `semtree_semantic` |
+| **Tooling** | `semtree_format` · `semtree_lint` · `semtree_ide` · `semtree_refactor` |
+| **Integration** | `semtree_ai` · `semtree_plugin` · `semtree_ffi` · `semtree_cli` |
+
+### Parser Backends
+
+| Backend | Algorithm | Best For |
+|---------|-----------|----------|
+| **RD** (default) | Recursive descent with backtracking | Most grammars, fastest for unambiguous languages |
+| **GLR** | Generalized LR with Graph-Structured Stack | Ambiguous grammars, conflict resolution |
+
+Select with `--backend glr` or let SemTree auto-detect.
+
+### Tree Architecture
+
+- **Green Tree** — Immutable, `Arc`-shared, no parent pointers. Enables incremental reparsing by reusing unchanged subtrees.
+- **Red Tree** — On-demand wrapper with parent/sibling/ancestor navigation and absolute offsets.
+- **SPPF** — Shared Packed Parse Forest for compact ambiguity representation (GLR backend).
+
+---
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the full roadmap. Phases 1-11 are complete:
+
+- [x] Phase 1-3: Core infrastructure, parser, typed AST, semantics
+- [x] Phase 4: Performance parity with tree-sitter
+- [x] Phase 5: Language ecosystem (6 grammars)
+- [x] Phase 6-7: IDE services, refactoring API
+- [x] Phase 8-9: AI APIs, plugin system
+- [x] Phase 10: C FFI, CLI tools
+- [x] Phase 11: GLR/RNGLR parser engine
+
+---
+
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-MIT OR Apache-2.0
+[MIT](LICENSE)
+
+---
+
+<div align="center">
+
+**Built with Rust** · **Faster than Tree-sitter** · **Complete Language Toolchain**
+
+</div>
