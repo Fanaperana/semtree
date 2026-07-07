@@ -12,6 +12,8 @@ pub struct Grammar {
     pub extras: Vec<SmolStr>,
     /// Formatting hints for the formatter generator.
     pub format_hints: Vec<FormatHint>,
+    /// The name of the entry/root rule (first rule defined in the grammar).
+    pub entry_rule: Option<SmolStr>,
 }
 
 impl Grammar {
@@ -22,6 +24,7 @@ impl Grammar {
             keywords: Vec::new(),
             extras: Vec::new(),
             format_hints: Vec::new(),
+            entry_rule: None,
         }
     }
 

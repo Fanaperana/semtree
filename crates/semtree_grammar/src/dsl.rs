@@ -80,10 +80,11 @@ impl<'a> DslParser<'a> {
 
         self.pos += 1;
 
-        let mut exprs = Vec::new();
         let mut fields = Vec::new();
 
-        // Collect indented body lines
+        // Collect all indented body lines into a single string, joining continuation
+        // lines (those starting with `|`) with the previous line.
+        let mut body_text = String::new();
         while self.pos < self.lines.len() {
             let body_line = self.lines[self.pos];
             if body_line.is_empty() {
@@ -100,15 +101,17 @@ impl<'a> DslParser<'a> {
                 break;
             }
 
-            let expr = self.parse_expr_line(body, &mut fields);
-            exprs.push(expr);
+            if !body_text.is_empty() {
+                body_text.push(' ');
+            }
+            body_text.push_str(body);
             self.pos += 1;
         }
 
-        let expr = if exprs.len() == 1 {
-            exprs.into_iter().next().unwrap()
+        let expr = if body_text.is_empty() {
+            RuleExpr::Blank
         } else {
-            RuleExpr::Seq(exprs)
+            self.parse_expr_line(&body_text, &mut fields)
         };
 
         let rule = Rule {
@@ -119,6 +122,9 @@ impl<'a> DslParser<'a> {
 
         if grammar.rules.contains_key(&rule_name) {
             return Err(GrammarError::DuplicateRule(rule_name));
+        }
+        if grammar.entry_rule.is_none() {
+            grammar.entry_rule = Some(rule_name.clone());
         }
         grammar.add_rule(rule_name, rule);
         Ok(())

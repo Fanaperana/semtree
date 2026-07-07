@@ -141,6 +141,7 @@ impl IncrementalParser {
             return RuntimeParseResult {
                 green_tree: new_tree,
                 errors: middle_result.errors,
+                kind_names: middle_result.kind_names,
             };
         }
 

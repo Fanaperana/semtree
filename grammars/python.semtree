@@ -44,30 +44,19 @@ Module :=
 # ── Statements ───────────────────────────────────────────────
 
 Statement :=
-    DecoratedDef | FunctionDef | AsyncFunctionDef | ClassDef | IfStmt | WhileStmt | ForStmt | AsyncForStmt | WithStmt | AsyncWithStmt | TryStmt | ImportStmt | FromImport | ReturnStmt | RaiseStmt | AssertStmt | PassStmt | BreakStmt | ContinueStmt | DelStmt | GlobalStmt | NonlocalStmt | AssignStmt | AugAssignStmt | ExprStmt
+    FunctionDef | ClassDef | IfStmt | ForStmt | WhileStmt
+    | ReturnStmt | ImportStmt | FromImport | RaiseStmt
+    | AssertStmt | PassStmt | BreakStmt | ContinueStmt
+    | DelStmt | GlobalStmt | NonlocalStmt
+    | AssignStmt | ExprStmt
 
 # ── Function ─────────────────────────────────────────────────
 
-DecoratedDef :=
-    Decorator+ DecoratedBody
-
-DecoratedBody :=
-    FunctionDef | AsyncFunctionDef | ClassDef
-
-Decorator :=
-    "@" Expression Newline
-
 FunctionDef :=
-    "def" name: Identifier ParamList ReturnAnnotation? ":" Suite
-
-AsyncFunctionDef :=
-    "async" "def" name: Identifier ParamList ReturnAnnotation? ":" Suite
+    "def" name: Identifier "(" ParamItems? ")" ReturnAnnotation? ":" Body
 
 ReturnAnnotation :=
     "->" TypeExpr
-
-ParamList :=
-    "(" ParamItems? ")"
 
 ParamItems :=
     Param ParamTail*
@@ -122,7 +111,7 @@ TypeAttr :=
 # ── Class ────────────────────────────────────────────────────
 
 ClassDef :=
-    "class" name: Identifier BaseClasses? ":" Suite
+    "class" name: Identifier BaseClasses? ":" Body
 
 BaseClasses :=
     "(" BaseClassList? ")"
@@ -133,72 +122,48 @@ BaseClassList :=
 BaseClassTail :=
     "," Expression
 
-Suite :=
-    INDENT Statement+ DEDENT
-
-INDENT :=
-    "INDENT"
-
-DEDENT :=
-    "DEDENT"
-
-Newline :=
-    "NEWLINE"
+Body :=
+    Statement+
 
 # ── Control Flow ─────────────────────────────────────────────
 
 IfStmt :=
-    "if" condition: Expression ":" Suite ElifClause* ElseClause?
+    "if" condition: Expression ":" Body ElifClause* ElseClause?
 
 ElifClause :=
-    "elif" condition: Expression ":" Suite
+    "elif" condition: Expression ":" Body
 
 ElseClause :=
-    "else" ":" Suite
+    "else" ":" Body
 
 WhileStmt :=
-    "while" condition: Expression ":" Suite ElseClause?
+    "while" condition: Expression ":" Body ElseClause?
 
 ForStmt :=
-    "for" target: Identifier "in" iter: Expression ":" Suite ElseClause?
-
-AsyncForStmt :=
-    "async" "for" target: Identifier "in" iter: Expression ":" Suite
-
-WithStmt :=
-    "with" WithItem WithItemTail* ":" Suite
-
-AsyncWithStmt :=
-    "async" "with" WithItem WithItemTail* ":" Suite
-
-WithItem :=
-    Expression AsClause?
-
-WithItemTail :=
-    "," WithItem
-
-AsClause :=
-    "as" Identifier
+    "for" target: Identifier "in" iter: Expression ":" Body ElseClause?
 
 # ── Exception Handling ───────────────────────────────────────
 
 TryStmt :=
-    "try" ":" Suite ExceptClause+ ElseClause? FinallyClause?
+    "try" ":" Body ExceptClause+ ElseClause? FinallyClause?
 
 ExceptClause :=
-    "except" ExceptType? ":" Suite
+    "except" ExceptType? ":" Body
 
 ExceptType :=
     Expression AsClause?
 
 FinallyClause :=
-    "finally" ":" Suite
+    "finally" ":" Body
 
 RaiseStmt :=
     "raise" Expression? FromClause?
 
 FromClause :=
     "from" Expression
+
+AsClause :=
+    "as" Identifier
 
 # ── Import ───────────────────────────────────────────────────
 
@@ -265,16 +230,25 @@ IdentTail :=
     "," Identifier
 
 AssignStmt :=
-    Target "=" Expression
+    TargetList "=" ExpressionList
 
-AugAssignStmt :=
-    Target AugOp Expression
+TargetList :=
+    Target TargetTail*
 
-AugOp :=
-    "+=" | "-=" | "*=" | "/=" | "//=" | "%=" | "**=" | "&=" | "|=" | "^=" | ">>=" | "<<="
+TargetTail :=
+    "," Target
 
 Target :=
-    Identifier | AttrAccess | SubscriptExpr
+    AttrAccess | Identifier
+
+ExpressionList :=
+    Expression ExprListTail*
+
+ExprListTail :=
+    "," Expression
+
+AttrAccess :=
+    Identifier "." Identifier
 
 ExprStmt :=
     Expression
@@ -316,40 +290,13 @@ NotExpr :=
     | CompareExpr
 
 CompareExpr :=
-    BitwiseOrExpr CompareTail*
+    AddExpr CompareTail*
 
 CompareTail :=
-    CompareOp BitwiseOrExpr
+    CompareOp AddExpr
 
 CompareOp :=
-    "==" | "!=" | "<" | ">" | "<=" | ">=" | "in" | "not" "in" | "is" | "is" "not"
-
-BitwiseOrExpr :=
-    BitwiseXorExpr BitwiseOrTail*
-
-BitwiseOrTail :=
-    "|" BitwiseXorExpr
-
-BitwiseXorExpr :=
-    BitwiseAndExpr BitwiseXorTail*
-
-BitwiseXorTail :=
-    "^" BitwiseAndExpr
-
-BitwiseAndExpr :=
-    ShiftExpr BitwiseAndTail*
-
-BitwiseAndTail :=
-    "&" ShiftExpr
-
-ShiftExpr :=
-    AddExpr ShiftTail*
-
-ShiftTail :=
-    ShiftOp AddExpr
-
-ShiftOp :=
-    "<<" | ">>"
+    "==" | "!=" | "<" | ">" | "<=" | ">=" | "in" | "is"
 
 AddExpr :=
     MulExpr AddTail*
@@ -367,24 +314,14 @@ MulTail :=
     MulOp UnaryExpr
 
 MulOp :=
-    "*" | "/" | "//" | "%" | "@"
+    "*" | "/" | "//" | "%"
 
 UnaryExpr :=
     UnaryOp UnaryExpr
-    | PowerExpr
+    | PostfixExpr
 
 UnaryOp :=
     "-" | "+" | "~"
-
-PowerExpr :=
-    AwaitExpr PowerSuffix?
-
-PowerSuffix :=
-    "**" UnaryExpr
-
-AwaitExpr :=
-    "await" PostfixExpr
-    | PostfixExpr
 
 PostfixExpr :=
     PrimaryExpr PostfixOp*
@@ -402,42 +339,21 @@ ArgTail :=
     "," Argument
 
 Argument :=
-    StarArg | DoubleStarArg | KeywordArg | Expression
-
-StarArg :=
-    "*" Expression
-
-DoubleStarArg :=
-    "**" Expression
+    KeywordArg | Expression
 
 KeywordArg :=
     Identifier "=" Expression
 
 SubscriptOp :=
-    "[" SliceOrIndex "]"
-
-SliceOrIndex :=
-    Slice | Expression
-
-Slice :=
-    Expression? ":" Expression? SliceStep?
-
-SliceStep :=
-    ":" Expression?
+    "[" Expression "]"
 
 AttrAccessOp :=
     "." Identifier
 
-AttrAccess :=
-    Identifier "." Identifier
-
-SubscriptExpr :=
-    Identifier "[" Expression "]"
-
 # ── Primary ──────────────────────────────────────────────────
 
 PrimaryExpr :=
-    ParenExpr | ListLiteral | DictLiteral | SetLiteral | ListComp | DictComp | SetComp | GeneratorExpr | FStringLiteral | YieldExpr | Literal | Identifier
+    ParenExpr | ListLiteral | DictLiteral | FStringExpr | Literal | Identifier
 
 ParenExpr :=
     "(" Expression TupleRest? ")"
@@ -450,8 +366,6 @@ TupleElements :=
 
 TupleElemTail :=
     "," Expression
-
-# ── Collection Literals ──────────────────────────────────────
 
 ListLiteral :=
     "[" ListElements? "]"
@@ -472,57 +386,10 @@ DictEntryTail :=
     "," DictEntry
 
 DictEntry :=
-    DictKV | DictUnpack
-
-DictKV :=
     Expression ":" Expression
 
-DictUnpack :=
-    "**" Expression
-
-SetLiteral :=
-    "{" Expression SetElemTail+ "}"
-
-SetElemTail :=
-    "," Expression
-
-# ── Comprehensions ───────────────────────────────────────────
-
-ListComp :=
-    "[" Expression CompFor+ "]"
-
-DictComp :=
-    "{" Expression ":" Expression CompFor+ "}"
-
-SetComp :=
-    "{" Expression CompFor+ "}"
-
-GeneratorExpr :=
-    "(" Expression CompFor+ ")"
-
-CompFor :=
-    "for" Identifier "in" Expression CompIf*
-
-CompIf :=
-    "if" Expression
-
-# ── Special Expressions ─────────────────────────────────────
-
-YieldExpr :=
-    "yield" YieldValue?
-
-YieldValue :=
-    "from" Expression
-    | Expression
-
-FStringLiteral :=
-    "f\"" FStringPart* "\""
-
-FStringPart :=
-    "{" Expression FormatSpec? "}" | String
-
-FormatSpec :=
-    ":" String
+FStringExpr :=
+    Identifier String
 
 Literal :=
     String | Integer | Float | BoolLiteral | NoneLiteral

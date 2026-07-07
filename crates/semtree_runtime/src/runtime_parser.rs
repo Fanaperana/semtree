@@ -1,4 +1,4 @@
-use rustc_hash::FxHashSet;
+use rustc_hash::{FxHashMap, FxHashSet};
 use semtree_core::SyntaxKind;
 use semtree_grammar::{Grammar, RuleExpr};
 use semtree_green::{GreenNode, GreenNodeBuilder};
@@ -12,6 +12,7 @@ use crate::runtime_lexer::{RawToken, RuntimeLexer, RuntimeTokenKind};
 pub struct RuntimeParseResult {
     pub green_tree: GreenNode,
     pub errors: Vec<RuntimeParseError>,
+    pub kind_names: FxHashMap<SyntaxKind, SmolStr>,
 }
 
 impl RuntimeParseResult {
@@ -43,8 +44,12 @@ impl std::fmt::Display for RuntimeParseError {
 }
 
 /// Recovery tokens that typically start new statements or close blocks.
-const RECOVERY_TOKENS: &[&str] = &[";", "}", ")", "]", "fn", "let", "if", "while", "for",
-    "return", "struct", "enum", "impl", "trait", "use", "mod", "pub"];
+const RECOVERY_TOKENS: &[&str] = &[
+    ";", "}", ")", "]",
+    "fn", "let", "if", "while", "for", "return", "struct", "enum", "impl", "trait", "use", "mod", "pub",
+    "def", "class", "elif", "else", "import", "from", "try", "except", "finally", "raise",
+    "with", "pass", "break", "continue", "assert", "yield", "async",
+];
 
 /// A grammar-driven parser. Given a Grammar IR and source text, it produces
 /// a lossless green tree by interpreting the grammar rules at runtime.
@@ -65,10 +70,9 @@ impl RuntimeParser {
 
         let entry_rule = self
             .grammar
-            .rules
-            .keys()
-            .next()
-            .cloned()
+            .entry_rule
+            .clone()
+            .or_else(|| self.grammar.rules.keys().next().cloned())
             .unwrap_or_else(|| "source_file".into());
 
         ctx.builder.start_node(SyntaxKind::SOURCE_FILE);
@@ -87,7 +91,30 @@ impl RuntimeParser {
         RuntimeParseResult {
             green_tree: ctx.builder.finish(),
             errors: ctx.errors,
+            kind_names: self.build_kind_names(),
         }
+    }
+
+    fn build_kind_names(&self) -> FxHashMap<SyntaxKind, SmolStr> {
+        let mut map = FxHashMap::default();
+        map.insert(SyntaxKind::SOURCE_FILE, "source_file".into());
+        map.insert(SyntaxKind::ERROR, "ERROR".into());
+        map.insert(SyntaxKind::WHITESPACE, "whitespace".into());
+        map.insert(SyntaxKind::NEWLINE, "newline".into());
+        map.insert(SyntaxKind::LINE_COMMENT, "comment".into());
+        map.insert(SyntaxKind::BLOCK_COMMENT, "comment".into());
+        map.insert(SyntaxKind::IDENT, "identifier".into());
+        map.insert(SyntaxKind::INT_LIT, "integer".into());
+        map.insert(SyntaxKind::FLOAT_LIT, "float".into());
+        map.insert(SyntaxKind::STRING_LIT, "string".into());
+        map.insert(SyntaxKind::CHAR_LIT, "char".into());
+        map.insert(SyntaxKind::BOOL_LIT, "boolean".into());
+
+        for name in self.grammar.rules.keys() {
+            let kind = rule_name_to_kind(name);
+            map.insert(kind, name.clone());
+        }
+        map
     }
 
     pub fn grammar(&self) -> &Grammar {
@@ -102,7 +129,8 @@ struct ParseContext<'a> {
     pos: usize,
     builder: GreenNodeBuilder,
     errors: Vec<RuntimeParseError>,
-    in_progress: FxHashSet<SmolStr>,
+    /// Track (rule_name, token_position) to prevent left-recursion only at the same position.
+    in_progress: FxHashSet<(SmolStr, usize)>,
     /// Nesting depth guard to prevent stack overflow on deep recursion.
     depth: u32,
 }
@@ -290,11 +318,12 @@ impl<'a> ParseContext<'a> {
         };
 
         let name_smol: SmolStr = name.into();
-        if self.in_progress.contains(&name_smol) {
+        let guard_key = (name_smol.clone(), self.pos);
+        if self.in_progress.contains(&guard_key) {
             return false;
         }
 
-        self.in_progress.insert(name_smol.clone());
+        self.in_progress.insert(guard_key.clone());
         self.depth += 1;
 
         let save_pos = self.pos;
@@ -309,28 +338,18 @@ impl<'a> ParseContext<'a> {
             self.builder.rollback(save_builder);
             self.pos = save_pos;
             self.depth -= 1;
-            self.in_progress.remove(&name_smol);
+            self.in_progress.remove(&guard_key);
             return false;
         }
 
         self.builder.finish_node();
         self.depth -= 1;
-        self.in_progress.remove(&name_smol);
+        self.in_progress.remove(&guard_key);
         true
     }
 
     fn rule_name_to_kind(&self, name: &str) -> SyntaxKind {
-        let mut hash: u16 = 4096;
-        for (i, b) in name.bytes().enumerate() {
-            hash = hash
-                .wrapping_add(b as u16)
-                .wrapping_mul(31)
-                .wrapping_add(i as u16);
-        }
-        if hash < 4096 {
-            hash += 4096;
-        }
-        SyntaxKind(hash)
+        rule_name_to_kind(name)
     }
 
     fn parse_expr(&mut self, expr: &RuleExpr) -> bool {
@@ -431,24 +450,19 @@ impl<'a> ParseContext<'a> {
     }
 
     fn parse_seq(&mut self, exprs: &[RuleExpr]) -> bool {
-        let _save = self.pos;
         for (i, expr) in exprs.iter().enumerate() {
             if !self.parse_expr(expr) {
-                // Error recovery: if we already consumed tokens (i > 0),
-                // report the missing element but continue. This makes
-                // partial parses produce trees even with errors.
                 if i > 0 {
-                    let expected = self.describe_expr(expr);
-                    self.error_missing(&expected);
-
-                    // Try to recover: if the missing token is a simple literal
-                    // like ";", ")", "}", we can just note it missing and continue.
+                    // Only recover for missing small closing literals near the
+                    // end of a sequence (e.g. missing ";" or ")" after all
+                    // meaningful content matched).
                     if let RuleExpr::Literal(lit) = expr {
-                        if lit.len() <= 2 {
+                        let is_last = i == exprs.len() - 1;
+                        if lit.len() <= 2 && is_last {
+                            self.error_missing(&format!("'{lit}'"));
                             continue;
                         }
                     }
-                    return true;
                 }
                 return false;
             }
@@ -601,4 +615,18 @@ impl<'a> ParseContext<'a> {
             _ => "expression".to_string(),
         }
     }
+}
+
+pub fn rule_name_to_kind(name: &str) -> SyntaxKind {
+    let mut hash: u16 = 4096;
+    for (i, b) in name.bytes().enumerate() {
+        hash = hash
+            .wrapping_add(b as u16)
+            .wrapping_mul(31)
+            .wrapping_add(i as u16);
+    }
+    if hash < 4096 {
+        hash += 4096;
+    }
+    SyntaxKind(hash)
 }

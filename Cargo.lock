@@ -354,6 +354,7 @@ name = "semtree_cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "rustc-hash",
  "semtree_ast",
  "semtree_core",
  "semtree_format",
@@ -370,6 +371,7 @@ dependencies = [
  "semtree_semantic",
  "semtree_ts_import",
  "serde_json",
+ "smol_str",
 ]
 
 [[package]]

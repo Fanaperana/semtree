@@ -1,9 +1,12 @@
 use std::path::{Path, PathBuf};
 
+use rustc_hash::FxHashMap;
+use semtree_core::SyntaxKind;
 use semtree_grammar::parse_semtree_dsl;
 use semtree_red::SyntaxNode;
 use semtree_runtime::RuntimeParser;
 use semtree_ts_import::import_tree_sitter_grammar;
+use smol_str::SmolStr;
 
 const GRAMMAR_SEARCH_DIRS: &[&str] = &["grammars", "../grammars", "../../grammars"];
 
@@ -66,14 +69,16 @@ pub fn run(grammar_path: Option<PathBuf>, file: PathBuf, format: String, exe_dir
     let parser = RuntimeParser::new(grammar);
     let result = parser.parse(&source);
 
+    let names = &result.kind_names;
+
     match format.as_str() {
-        "tree" => print_tree(&result.syntax(), 0),
+        "tree" => print_tree(&result.syntax(), 0, names),
         "sexp" => {
-            print_sexp(&result.syntax());
+            print_sexp(&result.syntax(), names);
             println!();
         }
         "json" => {
-            let json = tree_to_json(&result.syntax());
+            let json = tree_to_json(&result.syntax(), names);
             println!("{}", serde_json::to_string_pretty(&json)?);
         }
         _ => {
@@ -91,47 +96,55 @@ pub fn run(grammar_path: Option<PathBuf>, file: PathBuf, format: String, exe_dir
     Ok(())
 }
 
-fn print_tree(node: &SyntaxNode, indent: usize) {
+fn kind_name(kind: SyntaxKind, names: &FxHashMap<SyntaxKind, SmolStr>) -> String {
+    if let Some(name) = names.get(&kind) {
+        name.to_string()
+    } else {
+        format!("SyntaxKind({})", kind.0)
+    }
+}
+
+fn print_tree(node: &SyntaxNode, indent: usize, names: &FxHashMap<SyntaxKind, SmolStr>) {
     let prefix = "  ".repeat(indent);
     println!(
-        "{prefix}{:?}@{:?}",
-        node.kind(),
+        "{prefix}{}@{:?}",
+        kind_name(node.kind(), names),
         node.text_range(),
     );
 
     for child in node.children_with_tokens() {
         match child {
-            semtree_red::SyntaxElement::Node(n) => print_tree(&n, indent + 1),
+            semtree_red::SyntaxElement::Node(n) => print_tree(&n, indent + 1, names),
             semtree_red::SyntaxElement::Token(t) => {
                 let tp = "  ".repeat(indent + 1);
-                println!("{tp}{:?}@{:?} {:?}", t.kind(), t.text_range(), t.text());
+                println!("{tp}{}@{:?} {:?}", kind_name(t.kind(), names), t.text_range(), t.text());
             }
         }
     }
 }
 
-fn print_sexp(node: &SyntaxNode) {
-    print!("({:?}", node.kind());
+fn print_sexp(node: &SyntaxNode, names: &FxHashMap<SyntaxKind, SmolStr>) {
+    print!("({}", kind_name(node.kind(), names));
     for child in node.children_with_tokens() {
         print!(" ");
         match child {
-            semtree_red::SyntaxElement::Node(n) => print_sexp(&n),
+            semtree_red::SyntaxElement::Node(n) => print_sexp(&n, names),
             semtree_red::SyntaxElement::Token(t) => {
-                print!("({:?} {:?})", t.kind(), t.text());
+                print!("({} {:?})", kind_name(t.kind(), names), t.text());
             }
         }
     }
     print!(")");
 }
 
-fn tree_to_json(node: &SyntaxNode) -> serde_json::Value {
+fn tree_to_json(node: &SyntaxNode, names: &FxHashMap<SyntaxKind, SmolStr>) -> serde_json::Value {
     let children: Vec<serde_json::Value> = node
         .children_with_tokens()
         .into_iter()
         .map(|child| match child {
-            semtree_red::SyntaxElement::Node(n) => tree_to_json(&n),
+            semtree_red::SyntaxElement::Node(n) => tree_to_json(&n, names),
             semtree_red::SyntaxElement::Token(t) => serde_json::json!({
-                "kind": format!("{:?}", t.kind()),
+                "kind": kind_name(t.kind(), names),
                 "text": t.text(),
                 "range": [u32::from(t.text_range().start()), u32::from(t.text_range().end())]
             }),
@@ -139,7 +152,7 @@ fn tree_to_json(node: &SyntaxNode) -> serde_json::Value {
         .collect();
 
     serde_json::json!({
-        "kind": format!("{:?}", node.kind()),
+        "kind": kind_name(node.kind(), names),
         "range": [u32::from(node.text_range().start()), u32::from(node.text_range().end())],
         "children": children
     })
