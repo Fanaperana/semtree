@@ -10,6 +10,12 @@ pub struct Grammar {
     pub rules: BTreeMap<SmolStr, Rule>,
     pub keywords: Vec<SmolStr>,
     pub extras: Vec<SmolStr>,
+    /// Custom lexer token patterns (`token Name := /regex/` in DSL).
+    #[serde(default)]
+    pub tokens: Vec<TokenDef>,
+    /// When true, emit INDENT/DEDENT based on leading whitespace after newlines.
+    #[serde(default)]
+    pub indent_sensitive: bool,
     /// Formatting hints for the formatter generator.
     pub format_hints: Vec<FormatHint>,
     /// The name of the entry/root rule (first rule defined in the grammar).
@@ -23,6 +29,8 @@ impl Grammar {
             rules: BTreeMap::new(),
             keywords: Vec::new(),
             extras: Vec::new(),
+            tokens: Vec::new(),
+            indent_sensitive: false,
             format_hints: Vec::new(),
             entry_rule: None,
         }
@@ -81,6 +89,16 @@ pub enum RuleExpr {
     PrecRight(i32, Box<RuleExpr>),
     /// A blank/placeholder (matches nothing).
     Blank,
+}
+
+/// A custom lexer token defined in the grammar DSL.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TokenDef {
+    pub name: SmolStr,
+    /// Regex pattern (without `/` delimiters) or literal text.
+    pub pattern: SmolStr,
+    /// True when `pattern` is a regex; false for exact literal match.
+    pub is_regex: bool,
 }
 
 /// Formatting hints attached to the grammar.

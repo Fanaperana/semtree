@@ -228,6 +228,9 @@ impl<'a> ParseContext<'a> {
             RuntimeTokenKind::BlockComment => SyntaxKind::BLOCK_COMMENT,
             RuntimeTokenKind::Error => SyntaxKind::ERROR,
             RuntimeTokenKind::Eof => SyntaxKind::EOF,
+            RuntimeTokenKind::Indent | RuntimeTokenKind::Dedent | RuntimeTokenKind::Custom(_) => {
+                SyntaxKind::IDENT
+            }
         }
     }
 
@@ -306,7 +309,18 @@ impl<'a> ParseContext<'a> {
             "Integer" | "integer" | "number" => return self.parse_builtin_integer(),
             "Float" | "float" => return self.parse_builtin_float(),
             "String" | "string" => return self.parse_builtin_string(),
+            "INDENT" | "Indent" => return self.parse_builtin_indent(),
+            "DEDENT" | "Dedent" => return self.parse_builtin_dedent(),
             _ => {}
+        }
+
+        if let Some(idx) = self
+            .grammar
+            .tokens
+            .iter()
+            .position(|t| t.name.as_str() == name)
+        {
+            return self.parse_custom_token(idx as u16);
         }
 
         let rule = match self.grammar.rules.get(name) {
@@ -594,6 +608,45 @@ impl<'a> ParseContext<'a> {
             return false;
         }
         if self.tokens[peek].kind == RuntimeTokenKind::StringLit {
+            self.bump();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn parse_builtin_indent(&mut self) -> bool {
+        let peek = self.skip_trivia_pos();
+        if peek >= self.tokens.len() {
+            return false;
+        }
+        if self.tokens[peek].kind == RuntimeTokenKind::Indent {
+            self.bump();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn parse_builtin_dedent(&mut self) -> bool {
+        let peek = self.skip_trivia_pos();
+        if peek >= self.tokens.len() {
+            return false;
+        }
+        if self.tokens[peek].kind == RuntimeTokenKind::Dedent {
+            self.bump();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn parse_custom_token(&mut self, token_id: u16) -> bool {
+        let peek = self.skip_trivia_pos();
+        if peek >= self.tokens.len() {
+            return false;
+        }
+        if self.tokens[peek].kind == RuntimeTokenKind::Custom(token_id) {
             self.bump();
             true
         } else {

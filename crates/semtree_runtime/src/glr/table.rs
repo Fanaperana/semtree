@@ -28,6 +28,8 @@ pub struct Production {
     pub lhs: SmolStr,
     pub rhs: Vec<Symbol>,
     pub id: usize,
+    /// Precedence for conflict resolution (higher wins on reduce/reduce).
+    pub prec: i32,
 }
 
 /// An LR(0) item: a production with a dot position.
@@ -113,6 +115,7 @@ struct TableBuilder<'g> {
     follow_sets: FxHashMap<SmolStr, FxHashSet<Symbol>>,
     states: Vec<ItemSet>,
     state_map: FxHashMap<BTreeSet<LRItem>, usize>,
+    synth_counter: usize,
 }
 
 impl<'g> TableBuilder<'g> {
@@ -124,6 +127,7 @@ impl<'g> TableBuilder<'g> {
             follow_sets: FxHashMap::default(),
             states: Vec::new(),
             state_map: FxHashMap::default(),
+            synth_counter: 0,
         }
     }
 
@@ -148,47 +152,76 @@ impl<'g> TableBuilder<'g> {
             lhs: "__start__".into(),
             rhs: vec![Symbol::NonTerminal(start.clone()), Symbol::Eof],
             id: 0,
+            prec: 0,
         });
 
         let rule_names: Vec<SmolStr> = self.grammar.rules.keys().cloned().collect();
         for name in &rule_names {
             let rule = &self.grammar.rules[name];
-            let alternatives = self.expr_to_alternatives(&rule.expr);
-            for alt in alternatives {
+            let alternatives = self.expr_to_alternatives(&rule.expr, 0);
+            for (alt, prec) in alternatives {
                 let id = self.productions.len();
                 self.productions.push(Production {
                     lhs: name.clone(),
                     rhs: alt,
                     id,
+                    prec,
                 });
             }
         }
     }
 
-    /// Convert a RuleExpr into a list of alternative right-hand sides.
-    fn expr_to_alternatives(&self, expr: &RuleExpr) -> Vec<Vec<Symbol>> {
+    fn add_kleene_star(&mut self, inner: &RuleExpr, prec: i32) -> SmolStr {
+        let name: SmolStr = format!("__kleene_{}__", self.synth_counter).into();
+        self.synth_counter += 1;
+        let inner_alts = self.expr_to_alternatives(inner, prec);
+        let id_eps = self.productions.len();
+        self.productions.push(Production {
+            lhs: name.clone(),
+            rhs: vec![],
+            id: id_eps,
+            prec,
+        });
+        for (alt, alt_prec) in inner_alts {
+            let mut rhs = alt;
+            rhs.push(Symbol::NonTerminal(name.clone()));
+            let id = self.productions.len();
+            self.productions.push(Production {
+                lhs: name.clone(),
+                rhs,
+                id,
+                prec: alt_prec,
+            });
+        }
+        name
+    }
+
+    /// Convert a RuleExpr into alternative right-hand sides with precedence.
+    fn expr_to_alternatives(&mut self, expr: &RuleExpr, inherited_prec: i32) -> Vec<(Vec<Symbol>, i32)> {
         match expr {
-            RuleExpr::Literal(s) => vec![vec![Symbol::Terminal(s.clone())]],
+            RuleExpr::Literal(s) => vec![(vec![Symbol::Terminal(s.clone())], inherited_prec)],
             RuleExpr::RuleRef(name) => {
                 let sym = match name.as_str() {
                     "Identifier" | "identifier" | "_identifier" => Symbol::IdentTerminal,
                     "Integer" | "integer" | "number" => Symbol::IntTerminal,
                     "Float" | "float" => Symbol::FloatTerminal,
                     "String" | "string" => Symbol::StringTerminal,
+                    "INDENT" | "Indent" => Symbol::Terminal("INDENT".into()),
+                    "DEDENT" | "Dedent" => Symbol::Terminal("DEDENT".into()),
                     _ => Symbol::NonTerminal(name.clone()),
                 };
-                vec![vec![sym]]
+                vec![(vec![sym], inherited_prec)]
             }
             RuleExpr::Seq(exprs) => {
-                let mut result = vec![vec![]];
+                let mut result = vec![(vec![], inherited_prec)];
                 for e in exprs {
-                    let sub_alts = self.expr_to_alternatives(e);
+                    let sub_alts = self.expr_to_alternatives(e, inherited_prec);
                     let mut new_result = Vec::new();
-                    for existing in &result {
-                        for sub in &sub_alts {
+                    for (existing, ep) in &result {
+                        for (sub, sp) in &sub_alts {
                             let mut combined = existing.clone();
                             combined.extend(sub.iter().cloned());
-                            new_result.push(combined);
+                            new_result.push((combined, (*ep).max(*sp)));
                         }
                     }
                     result = new_result;
@@ -198,32 +231,26 @@ impl<'g> TableBuilder<'g> {
             RuleExpr::Choice(exprs) => {
                 let mut all = Vec::new();
                 for e in exprs {
-                    all.extend(self.expr_to_alternatives(e));
+                    all.extend(self.expr_to_alternatives(e, inherited_prec));
                 }
                 all
             }
             RuleExpr::Optional(inner) => {
-                let mut alts = self.expr_to_alternatives(inner);
-                alts.push(vec![]); // epsilon alternative
+                let mut alts = self.expr_to_alternatives(inner, inherited_prec);
+                alts.push((vec![], inherited_prec));
                 alts
             }
             RuleExpr::Repeat(inner) => {
-                // A* → ε | A A*
-                // We create a helper non-terminal for this.
-                // For simplicity in table building, treat as optional(A+)
-                // which gives: ε | inner+
-                let inner_alts = self.expr_to_alternatives(inner);
-                let mut alts = vec![vec![]]; // epsilon
-                alts.extend(inner_alts);
-                alts
+                let star_nt = self.add_kleene_star(inner, inherited_prec);
+                vec![(vec![Symbol::NonTerminal(star_nt)], inherited_prec)]
             }
-            RuleExpr::Repeat1(inner) => self.expr_to_alternatives(inner),
-            RuleExpr::Field(_, inner) => self.expr_to_alternatives(inner),
-            RuleExpr::Token(inner) => self.expr_to_alternatives(inner),
-            RuleExpr::Prec(_, inner)
-            | RuleExpr::PrecLeft(_, inner)
-            | RuleExpr::PrecRight(_, inner) => self.expr_to_alternatives(inner),
-            RuleExpr::Blank => vec![vec![]],
+            RuleExpr::Repeat1(inner) => self.expr_to_alternatives(inner, inherited_prec),
+            RuleExpr::Field(_, inner) => self.expr_to_alternatives(inner, inherited_prec),
+            RuleExpr::Token(inner) => self.expr_to_alternatives(inner, inherited_prec),
+            RuleExpr::Prec(p, inner) => self.expr_to_alternatives(inner, *p),
+            RuleExpr::PrecLeft(p, inner) => self.expr_to_alternatives(inner, *p),
+            RuleExpr::PrecRight(p, inner) => self.expr_to_alternatives(inner, *p),
+            RuleExpr::Blank => vec![(vec![], inherited_prec)],
         }
     }
 

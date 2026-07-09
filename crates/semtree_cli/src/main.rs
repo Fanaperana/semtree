@@ -53,6 +53,14 @@ enum Commands {
         /// Parser backend: rd (recursive descent) or glr
         #[arg(long, default_value = "rd")]
         backend: String,
+
+        /// Use incremental parser (splice-based subtree reuse)
+        #[arg(long)]
+        incremental: bool,
+
+        /// Apply edit then incremental reparse: START:END:TEXT (byte offsets)
+        #[arg(long)]
+        edit: Option<String>,
     },
 
     /// Check a grammar definition for errors
@@ -149,7 +157,9 @@ fn main() {
             file,
             format,
             backend,
-        } => commands::run(grammar, file, format, &exe_dir(), &backend),
+            incremental,
+            edit,
+        } => commands::run(grammar, file, format, &exe_dir(), &backend, incremental, edit.as_deref()),
         Commands::Check { file } => commands::check(file),
         Commands::Format { file } => commands::format(file),
         Commands::Query { file, pattern } => commands::query(file, pattern),

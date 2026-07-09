@@ -4,7 +4,7 @@ use rustc_hash::FxHashMap;
 use semtree_core::SyntaxKind;
 use semtree_grammar::parse_semtree_dsl;
 use semtree_red::SyntaxNode;
-use semtree_runtime::{RuntimeParser, GlrParser};
+use semtree_runtime::{RuntimeParser, GlrParser, IncrementalParser, EditRegion, apply_edits};
 use semtree_ts_import::import_tree_sitter_grammar;
 use smol_str::SmolStr;
 
@@ -39,7 +39,15 @@ fn detect_grammar_path(file: &Path, exe_dir: &Path) -> Option<PathBuf> {
     None
 }
 
-pub fn run(grammar_path: Option<PathBuf>, file: PathBuf, format: String, exe_dir: &Path, backend: &str) -> super::Result {
+pub fn run(
+    grammar_path: Option<PathBuf>,
+    file: PathBuf,
+    format: String,
+    exe_dir: &Path,
+    backend: &str,
+    incremental: bool,
+    edit: Option<&str>,
+) -> super::Result {
     let source = std::fs::read_to_string(&file)?;
 
     let grammar_path = match grammar_path {
@@ -83,9 +91,32 @@ pub fn run(grammar_path: Option<PathBuf>, file: PathBuf, format: String, exe_dir
             (result.syntax(), result.kind_names, result.errors, extra)
         }
         "rd" | _ => {
-            let parser = RuntimeParser::new(grammar);
-            let result = parser.parse(&source);
-            (result.syntax(), result.kind_names, result.errors, String::new())
+            if incremental || edit.is_some() {
+                let mut inc = IncrementalParser::new(grammar);
+                let result = if let Some(spec) = edit {
+                    let (start, end, text) = parse_edit_spec(spec)?;
+                    let edits = vec![EditRegion::new(start, end, text)];
+                    let new_source = apply_edits(&source, &edits);
+                    eprintln!(
+                        "incremental reparse: edit [{start}..{end}) -> {:?}",
+                        edits[0].new_text
+                    );
+                    let _ = inc.parse(&source);
+                    inc.update(&new_source, &edits)
+                } else {
+                    inc.parse(&source)
+                };
+                (
+                    result.syntax(),
+                    result.kind_names,
+                    result.errors,
+                    if incremental { " (incremental parser)".into() } else { String::new() },
+                )
+            } else {
+                let parser = RuntimeParser::new(grammar);
+                let result = parser.parse(&source);
+                (result.syntax(), result.kind_names, result.errors, String::new())
+            }
         }
     };
 
@@ -118,6 +149,18 @@ pub fn run(grammar_path: Option<PathBuf>, file: PathBuf, format: String, exe_dir
     }
 
     Ok(())
+}
+
+/// Parse `START:END:TEXT` edit specification (byte offsets).
+fn parse_edit_spec(spec: &str) -> Result<(u32, u32, String), Box<dyn std::error::Error>> {
+    let parts: Vec<&str> = spec.splitn(3, ':').collect();
+    if parts.len() < 3 {
+        return Err("edit format must be START:END:TEXT (e.g. 10:10:x)".into());
+    }
+    let start: u32 = parts[0].parse().map_err(|_| "invalid start offset")?;
+    let end: u32 = parts[1].parse().map_err(|_| "invalid end offset")?;
+    let text = parts[2].to_string();
+    Ok((start, end, text))
 }
 
 fn kind_name(kind: SyntaxKind, names: &FxHashMap<SyntaxKind, SmolStr>) -> String {

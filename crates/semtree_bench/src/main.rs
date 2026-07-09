@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+mod grammar_loader;
+
 use std::time::{Duration, Instant};
 
 use semtree_format::Formatter;
@@ -7,7 +9,7 @@ use semtree_grammar::{Grammar, Rule, RuleExpr};
 use semtree_lint::LintEngine;
 use semtree_query::{QueryEngine, QueryPattern};
 use semtree_red::{Preorder, SyntaxNode};
-use semtree_runtime::RuntimeParser;
+use semtree_runtime::{IncrementalParser, RuntimeParser};
 use semtree_semantic::SemanticModel;
 
 // ─── Configuration ──────────────────────────────────────────────────────────
@@ -991,6 +993,15 @@ fn print_single_table(title: &str, rows: &[(String, String)]) {
     );
 }
 
+fn ratio_f64(st: &BenchResult, ts: &BenchResult) -> f64 {
+    let st_ns = st.median.as_nanos() as f64;
+    let ts_ns = ts.median.as_nanos() as f64;
+    if ts_ns == 0.0 {
+        return 1.0;
+    }
+    st_ns / ts_ns
+}
+
 fn ratio_string(st: &BenchResult, ts: &BenchResult) -> String {
     let st_ns = st.median.as_nanos() as f64;
     let ts_ns = ts.median.as_nanos() as f64;
@@ -1087,18 +1098,27 @@ fn run_incremental_benchmarks(langs: &[LangBench], iterations: usize) -> Vec<Tab
             let _ = parser.parse(&edited, Some(&tree)).unwrap();
         });
 
-        // SemTree full reparse (no incremental yet—this measures the baseline)
-        let parser = RuntimeParser::new(lang.grammar.clone());
+        // SemTree incremental reparse (splice-based subtree reuse)
+        let grammar = lang.grammar.clone();
         let st_result = bench(iterations, || {
             let mut edited = source.clone();
             edited.insert(insert_pos, ' ');
-            let _ = parser.parse(&edited);
+            let mut inc = IncrementalParser::new(grammar.clone());
+            let _ = inc.parse(&source);
+            let _ = inc.update(
+                &edited,
+                &[semtree_runtime::EditRegion::new(
+                    insert_pos as u32,
+                    insert_pos as u32,
+                    " ",
+                )],
+            );
         });
 
         rows.push(TableRow {
             test_name: format!("{} 10KB incr", lang.name),
             ts_result: format!("{} (edit+reparse)", format_duration(ts_result.median)),
-            st_result: format!("{} (full reparse)", format_duration(st_result.median)),
+            st_result: format!("{} (incremental)", format_duration(st_result.median)),
             ratio: ratio_string(&st_result, &ts_result),
         });
     }
@@ -1426,14 +1446,15 @@ fn ts_parse_language(source: &str, lang_name: &str) -> tree_sitter::Tree {
 }
 
 fn build_grammar_for(lang_name: &str) -> Grammar {
-    match lang_name {
-        "JSON" => build_json_grammar(),
-        "JavaScript" => build_javascript_grammar(),
-        "Rust" => build_rust_grammar(),
-        "CSS" => build_css_grammar(),
-        "Python" => build_python_grammar(),
+    let file = match lang_name {
+        "JSON" => "json",
+        "JavaScript" => "javascript",
+        "Rust" => "rust",
+        "CSS" => "css",
+        "Python" => "python",
         _ => panic!("Unknown language: {lang_name}"),
-    }
+    };
+    grammar_loader::load_shipped_grammar(file)
 }
 
 fn ts_count_errors(tree: &tree_sitter::Tree) -> usize {
@@ -1626,31 +1647,31 @@ fn main() {
         LangBench {
             name: "JSON",
             generate: generate_json,
-            grammar: build_json_grammar(),
+            grammar: grammar_loader::load_shipped_grammar("json"),
             ts_parse: ts_parse_json,
         },
         LangBench {
             name: "JavaScript",
             generate: generate_javascript,
-            grammar: build_javascript_grammar(),
+            grammar: grammar_loader::load_shipped_grammar("javascript"),
             ts_parse: ts_parse_javascript,
         },
         LangBench {
             name: "Rust",
             generate: generate_rust,
-            grammar: build_rust_grammar(),
+            grammar: grammar_loader::load_shipped_grammar("rust"),
             ts_parse: ts_parse_rust,
         },
         LangBench {
             name: "CSS",
             generate: generate_css,
-            grammar: build_css_grammar(),
+            grammar: grammar_loader::load_shipped_grammar("css"),
             ts_parse: ts_parse_css,
         },
         LangBench {
             name: "Python",
             generate: generate_python,
-            grammar: build_python_grammar(),
+            grammar: grammar_loader::load_shipped_grammar("python"),
             ts_parse: ts_parse_python,
         },
     ];
@@ -1699,17 +1720,74 @@ fn main() {
 
     println!();
     println!("═══════════════════════════════════════════════════════════════");
-    println!("SUMMARY");
+    println!("SUMMARY (computed from this run — shipped grammars/*.semtree)");
     println!("═══════════════════════════════════════════════════════════════");
-    println!("  Parse Speed:       SemTree 1.5-3.5x faster across all languages");
-    println!("  Incremental:       SemTree 1.8-3.4x faster (full reparse vs TS edit+reparse)");
-    println!("  Memory:            SemTree uses ~1.3-4x more (Arc overhead, no arena yet)");
-    println!("  Error Recovery:    Both produce usable trees from broken code");
-    println!("  Bonus Features:    Semantic model, formatting, linting, AI APIs — TS has none");
+    print_computed_summary(&cold_rows, &incr_rows, &mem_rows);
     println!();
     println!("Notes:");
-    println!("  - Tree-sitter uses optimized C parsers compiled from grammar specifications");
-    println!("  - SemTree uses a runtime-interpreted grammar (no codegen step needed)");
+    println!("  - SemTree uses grammars from grammars/*.semtree (not inline toy grammars)");
+    println!("  - Tree-sitter uses production C parsers");
+    println!("  - Incremental: TS edit+reparse vs SemTree IncrementalParser::update");
     println!("  - All times are median of {iterations} iterations, --release build");
     println!("  - Memory estimates use 48 bytes/node (TS) and 64 bytes/node (SemTree)");
+}
+
+fn print_computed_summary(parse_rows: &[TableRow], incr_rows: &[TableRow], mem_rows: &[TableRow]) {
+    let parse_10k: Vec<f64> = parse_rows
+        .iter()
+        .filter(|r| r.test_name.contains("10KB"))
+        .filter_map(|r| parse_ratio_from_display(&r.ratio))
+        .collect();
+
+    if !parse_10k.is_empty() {
+        let avg = parse_10k.iter().sum::<f64>() / parse_10k.len() as f64;
+        if avg < 1.0 {
+            println!(
+                "  Parse Speed (10KB):  SemTree {:.2}x faster on average",
+                1.0 / avg
+            );
+        } else {
+            println!(
+                "  Parse Speed (10KB):  SemTree {:.2}x slower on average",
+                avg
+            );
+        }
+    } else {
+        println!("  Parse Speed:         (no 10KB rows)");
+    }
+
+    let incr_ratios: Vec<f64> = incr_rows
+        .iter()
+        .filter_map(|r| parse_ratio_from_display(&r.ratio))
+        .collect();
+    if !incr_ratios.is_empty() {
+        let avg = incr_ratios.iter().sum::<f64>() / incr_ratios.len() as f64;
+        if avg < 1.0 {
+            println!(
+                "  Incremental:         SemTree {:.2}x faster on average",
+                1.0 / avg
+            );
+        } else {
+            println!(
+                "  Incremental:         SemTree {:.2}x slower on average",
+                avg
+            );
+        }
+    }
+
+    if let Some(first) = mem_rows.first() {
+        println!("  Memory (sample):       {} vs {}", first.st_result, first.ts_result);
+    }
+    println!("  Error Recovery:        see tables above");
+    println!("  Bonus Features:        semantic model, format, lint — TS has none built-in");
+}
+
+fn parse_ratio_from_display(s: &str) -> Option<f64> {
+    if let Some(rest) = s.strip_suffix("x faster") {
+        return rest.trim().parse().ok().map(|f: f64| 1.0 / f);
+    }
+    if let Some(rest) = s.strip_suffix("x slower") {
+        return rest.trim().parse().ok();
+    }
+    None
 }

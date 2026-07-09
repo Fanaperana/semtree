@@ -232,6 +232,9 @@ impl GlrParser {
             RuntimeTokenKind::Float => Symbol::FloatTerminal,
             RuntimeTokenKind::StringLit => Symbol::StringTerminal,
             RuntimeTokenKind::Eof => Symbol::Eof,
+            RuntimeTokenKind::Indent => Symbol::Terminal("INDENT".into()),
+            RuntimeTokenKind::Dedent => Symbol::Terminal("DEDENT".into()),
+            RuntimeTokenKind::Custom(_) => Symbol::Terminal(tok.text.clone()),
             _ => Symbol::Terminal(tok.text.clone()),
         }
     }
@@ -250,6 +253,9 @@ impl GlrParser {
             RuntimeTokenKind::BlockComment => SyntaxKind::BLOCK_COMMENT,
             RuntimeTokenKind::Error => SyntaxKind::ERROR,
             RuntimeTokenKind::Eof => SyntaxKind::EOF,
+            RuntimeTokenKind::Indent | RuntimeTokenKind::Dedent | RuntimeTokenKind::Custom(_) => {
+                SyntaxKind::IDENT
+            }
         }
     }
 
@@ -292,7 +298,7 @@ impl GlrParser {
                     None => continue,
                 };
 
-                let reduce_actions: Vec<usize> = actions
+                let mut reduce_actions: Vec<usize> = actions
                     .get(lookahead)
                     .into_iter()
                     .flatten()
@@ -303,7 +309,19 @@ impl GlrParser {
                     .collect();
 
                 if reduce_actions.len() > 1 {
-                    ambiguities += reduce_actions.len() - 1;
+                    let max_prec = reduce_actions
+                        .iter()
+                        .map(|id| self.table.productions[*id].prec)
+                        .max()
+                        .unwrap_or(0);
+                    let before = reduce_actions.len();
+                    reduce_actions
+                        .retain(|id| self.table.productions[*id].prec == max_prec);
+                    if reduce_actions.len() < before {
+                        ambiguities += before - reduce_actions.len();
+                    } else {
+                        ambiguities += reduce_actions.len() - 1;
+                    }
                 }
 
                 for prod_id in reduce_actions {
@@ -322,7 +340,6 @@ impl GlrParser {
                         let base_node = path[0].0;
                         let base_state = gss.state_of(base_node);
 
-                        // Look up GOTO[base_state, lhs].
                         let target_state = match self
                             .table
                             .goto
@@ -333,7 +350,6 @@ impl GlrParser {
                             None => continue,
                         };
 
-                        // Collect SPPF children from the path.
                         let sppf_children: Vec<SppfNodeId> = path
                             .iter()
                             .skip(1)
@@ -344,17 +360,23 @@ impl GlrParser {
                         let range = if sppf_children.is_empty() {
                             TextRange::new(TextSize::new(0), TextSize::new(0))
                         } else {
-                            let start = sppf.range_of(sppf_children[0]).start();
-                            let end = sppf
-                                .range_of(*sppf_children.last().unwrap())
-                                .end();
+                            let mut start = sppf.range_of(sppf_children[0]).start();
+                            let mut end = sppf.range_of(sppf_children[0]).end();
+                            for id in &sppf_children[1..] {
+                                let r = sppf.range_of(*id);
+                                if r.start() < start {
+                                    start = r.start();
+                                }
+                                if r.end() > end {
+                                    end = r.end();
+                                }
+                            }
                             TextRange::new(start, end)
                         };
 
                         let sppf_node =
                             sppf.create_symbol(lhs.clone(), sppf_children, range);
 
-                        // Find or create GSS node with target_state.
                         if let Some(existing) =
                             gss.find_node_with_state(target_state, &current)
                         {

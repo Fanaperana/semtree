@@ -58,6 +58,11 @@ impl<'a> DslParser<'a> {
             } else if let Some(kw) = line.strip_prefix("keyword ") {
                 grammar.add_keyword(kw.trim());
                 self.pos += 1;
+            } else if line == "indent-sensitive" {
+                grammar.indent_sensitive = true;
+                self.pos += 1;
+            } else if let Some(rest) = line.strip_prefix("token ") {
+                self.parse_token_def(&mut grammar, rest.trim());
             } else if let Some(extra) = line.strip_prefix("extra ") {
                 grammar.extras.push(extra.trim().into());
                 self.pos += 1;
@@ -207,6 +212,37 @@ impl<'a> DslParser<'a> {
         } else if let Some(rest) = line.strip_prefix("space after ") {
             grammar.format_hints.push(FormatHint::SpaceAfter(rest.trim().trim_matches('"').into()));
         }
+        self.pos += 1;
+    }
+
+    fn parse_token_def(&mut self, grammar: &mut Grammar, rest: &str) {
+        // token Name := /regex/  OR  token Name := "literal"
+        let Some((name_part, pattern_part)) = rest.split_once(":=") else {
+            self.pos += 1;
+            return;
+        };
+        let name: SmolStr = name_part.trim().into();
+        let pattern_part = pattern_part.trim();
+
+        let (pattern, is_regex) = if let Some(inner) = pattern_part
+            .strip_prefix('/')
+            .and_then(|s| s.strip_suffix('/'))
+        {
+            (inner.into(), true)
+        } else if let Some(lit) = pattern_part
+            .strip_prefix('"')
+            .and_then(|s| s.strip_suffix('"'))
+        {
+            (lit.into(), false)
+        } else {
+            (pattern_part.into(), false)
+        };
+
+        grammar.tokens.push(crate::ir::TokenDef {
+            name,
+            pattern,
+            is_regex,
+        });
         self.pos += 1;
     }
 }

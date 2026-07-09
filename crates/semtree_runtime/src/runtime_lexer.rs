@@ -1,3 +1,4 @@
+use regex::Regex;
 use rustc_hash::FxHashMap;
 use semtree_grammar::Grammar;
 use smol_str::SmolStr;
@@ -13,29 +14,21 @@ pub struct RawToken {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RuntimeTokenKind {
-    /// A keyword defined in the grammar.
     Keyword(u16),
-    /// A literal string from a grammar rule (e.g. "+", ";").
     Literal(u16),
-    /// An identifier (not matching any keyword).
+    /// Custom token from `token Name := /regex/` in grammar.
+    Custom(u16),
     Ident,
-    /// An integer literal.
     Integer,
-    /// A float literal.
     Float,
-    /// A string literal.
     StringLit,
-    /// Whitespace (non-newline).
+    Indent,
+    Dedent,
     Whitespace,
-    /// Newline.
     Newline,
-    /// Line comment.
     LineComment,
-    /// Block comment.
     BlockComment,
-    /// Unknown/error character.
     Error,
-    /// End of input.
     Eof,
 }
 
@@ -51,18 +44,29 @@ impl RuntimeTokenKind {
     }
 }
 
-/// A grammar-driven lexer. Given a Grammar IR, it tokenizes source text
-/// using the keywords and literal strings defined in that grammar.
+struct CompiledToken {
+    regex: Option<Regex>,
+    literal: Option<SmolStr>,
+    id: u16,
+}
+
+struct CompiledExtra {
+    regex: Regex,
+    kind: RuntimeTokenKind,
+}
+
+/// A grammar-driven lexer. Tokenizes using keywords, literals, custom `token`
+/// patterns, and optional `extra` regexes from the grammar DSL.
 pub struct RuntimeLexer {
     keywords: FxHashMap<SmolStr, u16>,
-    /// Literal strings from grammar rules, sorted longest-first for greedy matching.
     literals: Vec<(SmolStr, u16)>,
-    /// Extra patterns (typically whitespace regex from tree-sitter grammars).
-    _extras: Vec<SmolStr>,
+    custom_tokens: Vec<CompiledToken>,
+    token_names: Vec<SmolStr>,
+    extra_patterns: Vec<CompiledExtra>,
+    indent_sensitive: bool,
 }
 
 impl RuntimeLexer {
-    /// Build a runtime lexer from a Grammar IR.
     pub fn new(grammar: &Grammar) -> Self {
         let mut keywords = FxHashMap::default();
         for (i, kw) in grammar.keywords.iter().enumerate() {
@@ -74,14 +78,67 @@ impl RuntimeLexer {
         Self::collect_literals_from_grammar(grammar, &mut literal_set, &mut literal_counter);
 
         let mut literals: Vec<_> = literal_set.into_iter().collect();
-        // Sort longest first for greedy matching.
         literals.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+
+        let mut custom_tokens = Vec::new();
+        let mut token_names = Vec::new();
+        for (i, def) in grammar.tokens.iter().enumerate() {
+            token_names.push(def.name.clone());
+            let compiled = if def.is_regex {
+                CompiledToken {
+                    regex: Regex::new(def.pattern.as_str()).ok(),
+                    literal: None,
+                    id: i as u16,
+                }
+            } else {
+                CompiledToken {
+                    regex: None,
+                    literal: Some(def.pattern.clone()),
+                    id: i as u16,
+                }
+            };
+            custom_tokens.push(compiled);
+        }
+        custom_tokens.sort_by(|a, b| {
+            let alen = a.literal.as_ref().map(|s| s.len()).unwrap_or(0);
+            let blen = b.literal.as_ref().map(|s| s.len()).unwrap_or(0);
+            blen.cmp(&alen)
+        });
+
+        let extra_patterns = Self::compile_extras(grammar);
 
         Self {
             keywords,
             literals,
-            _extras: grammar.extras.clone(),
+            custom_tokens,
+            token_names,
+            extra_patterns,
+            indent_sensitive: grammar.indent_sensitive,
         }
+    }
+
+    pub fn token_name(&self, id: u16) -> Option<&str> {
+        self.token_names.get(id as usize).map(|s| s.as_str())
+    }
+
+    fn compile_extras(grammar: &Grammar) -> Vec<CompiledExtra> {
+        let mut extras = Vec::new();
+        for extra in &grammar.extras {
+            let pattern = extra.as_str();
+            if let (Some(p), Some(_)) = (pattern.strip_prefix('/'), pattern.strip_suffix('/')) {
+                if let Ok(re) = Regex::new(p) {
+                    let kind = if p.contains('\n') || p == r"\s+" || p == r"[ \t]+" {
+                        RuntimeTokenKind::Whitespace
+                    } else if p.contains("//") || p.contains('#') {
+                        RuntimeTokenKind::LineComment
+                    } else {
+                        RuntimeTokenKind::Whitespace
+                    };
+                    extras.push(CompiledExtra { regex: re, kind });
+                }
+            }
+        }
+        extras
     }
 
     fn collect_literals_from_grammar(
@@ -126,14 +183,26 @@ impl RuntimeLexer {
         }
     }
 
-    /// Tokenize the entire source.
     pub fn tokenize(&self, source: &str) -> Vec<RawToken> {
+        let mut tokens = self.tokenize_raw(source);
+        if self.indent_sensitive {
+            tokens = inject_indent_tokens(tokens, source);
+        }
+        tokens
+    }
+
+    fn tokenize_raw(&self, source: &str) -> Vec<RawToken> {
         let mut tokens = Vec::new();
         let mut pos = 0usize;
         let bytes = source.as_bytes();
 
         while pos < source.len() {
             let start = pos;
+
+            // Grammar-defined extra/trivia patterns
+            if self.try_match_extra(source, pos, &mut tokens, &mut pos) {
+                continue;
+            }
 
             // Newlines
             if bytes[pos] == b'\n' {
@@ -158,7 +227,7 @@ impl RuntimeLexer {
                 continue;
             }
 
-            // Whitespace
+            // Default whitespace
             if source[pos..].starts_with(|c: char| c.is_whitespace()) {
                 while pos < source.len() {
                     let c = source[pos..].chars().next().unwrap();
@@ -176,7 +245,7 @@ impl RuntimeLexer {
                 continue;
             }
 
-            // Line comment
+            // Default comments
             if source[pos..].starts_with("//") {
                 while pos < source.len() && bytes[pos] != b'\n' {
                     pos += 1;
@@ -189,7 +258,6 @@ impl RuntimeLexer {
                 continue;
             }
 
-            // Block comment (nested)
             if source[pos..].starts_with("/*") {
                 pos += 2;
                 let mut depth = 1u32;
@@ -212,13 +280,18 @@ impl RuntimeLexer {
                 continue;
             }
 
-            // String literal
-            if bytes[pos] == b'"' {
+            // String literal (also f"/F" prefix via custom token first)
+            if self.try_custom_tokens(source, pos, &mut tokens, &mut pos) {
+                continue;
+            }
+
+            if bytes[pos] == b'"' || bytes[pos] == b'\'' {
+                let quote = bytes[pos];
                 pos += 1;
                 while pos < source.len() {
                     if bytes[pos] == b'\\' {
                         pos += 2;
-                    } else if bytes[pos] == b'"' {
+                    } else if bytes[pos] == quote {
                         pos += 1;
                         break;
                     } else {
@@ -289,7 +362,7 @@ impl RuntimeLexer {
                 continue;
             }
 
-            // Try to match grammar literals (operators, punctuation)
+            // Grammar literals
             let remaining = &source[pos..];
             let mut matched = false;
             for (lit, idx) in &self.literals {
@@ -308,7 +381,6 @@ impl RuntimeLexer {
                 continue;
             }
 
-            // Unknown character
             pos += c.len_utf8();
             tokens.push(RawToken {
                 kind: RuntimeTokenKind::Error,
@@ -326,7 +398,176 @@ impl RuntimeLexer {
         tokens
     }
 
+    fn try_match_extra(
+        &self,
+        source: &str,
+        pos: usize,
+        tokens: &mut Vec<RawToken>,
+        cursor: &mut usize,
+    ) -> bool {
+        for extra in &self.extra_patterns {
+            if let Some(m) = extra.regex.find_at(source, pos) {
+                if m.start() == pos {
+                    *cursor = m.end();
+                    tokens.push(RawToken {
+                        kind: extra.kind,
+                        text: source[m.start()..m.end()].into(),
+                        range: Self::make_range(m.start(), m.end()),
+                    });
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    fn try_custom_tokens(
+        &self,
+        source: &str,
+        pos: usize,
+        tokens: &mut Vec<RawToken>,
+        cursor: &mut usize,
+    ) -> bool {
+        for ct in &self.custom_tokens {
+            if let Some(lit) = &ct.literal {
+                if source[pos..].starts_with(lit.as_str()) {
+                    *cursor = pos + lit.len();
+                    tokens.push(RawToken {
+                        kind: RuntimeTokenKind::Custom(ct.id),
+                        text: lit.clone(),
+                        range: Self::make_range(pos, pos + lit.len()),
+                    });
+                    return true;
+                }
+            } else if let Some(re) = &ct.regex {
+                if let Some(m) = re.find_at(source, pos) {
+                    if m.start() == pos {
+                        *cursor = m.end();
+                        tokens.push(RawToken {
+                            kind: RuntimeTokenKind::Custom(ct.id),
+                            text: source[m.start()..m.end()].into(),
+                            range: Self::make_range(m.start(), m.end()),
+                        });
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     fn make_range(start: usize, end: usize) -> TextRange {
         TextRange::new(TextSize::new(start as u32), TextSize::new(end as u32))
+    }
+}
+
+/// Insert INDENT/DEDENT tokens for indentation-sensitive grammars (Python-style).
+fn inject_indent_tokens(mut tokens: Vec<RawToken>, source: &str) -> Vec<RawToken> {
+    let mut out = Vec::with_capacity(tokens.len() + 16);
+    let mut indent_stack = vec![0usize];
+    let mut at_line_start = true;
+
+    let column_at = |offset: usize| -> usize {
+        source[..offset]
+            .rfind('\n')
+            .map(|p| offset - p - 1)
+            .unwrap_or(offset)
+    };
+
+    let push_indent_dedent = |out: &mut Vec<RawToken>, stack: &mut Vec<usize>, col: usize| {
+        if col > *stack.last().unwrap() {
+            stack.push(col);
+            out.push(RawToken {
+                kind: RuntimeTokenKind::Indent,
+                text: "".into(),
+                range: TextRange::new(TextSize::new(0), TextSize::new(0)),
+            });
+        } else {
+            while stack.len() > 1 && *stack.last().unwrap() > col {
+                stack.pop();
+                out.push(RawToken {
+                    kind: RuntimeTokenKind::Dedent,
+                    text: "".into(),
+                    range: TextRange::new(TextSize::new(0), TextSize::new(0)),
+                });
+            }
+        }
+    };
+
+    for tok in tokens.drain(..) {
+        if tok.kind == RuntimeTokenKind::Eof {
+            while indent_stack.len() > 1 {
+                indent_stack.pop();
+                out.push(RawToken {
+                    kind: RuntimeTokenKind::Dedent,
+                    text: "".into(),
+                    range: TextRange::new(TextSize::new(0), TextSize::new(0)),
+                });
+            }
+            out.push(tok);
+            break;
+        }
+
+        if tok.kind == RuntimeTokenKind::Newline {
+            out.push(tok);
+            at_line_start = true;
+            continue;
+        }
+
+        if tok.kind.is_trivia() {
+            out.push(tok);
+            continue;
+        }
+
+        if at_line_start {
+            let col = column_at(u32::from(tok.range.start()) as usize);
+            if col > 0 || indent_stack.len() > 1 {
+                push_indent_dedent(&mut out, &mut indent_stack, col);
+            }
+            at_line_start = false;
+        }
+
+        out.push(tok);
+    }
+
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use semtree_grammar::parse_semtree_dsl;
+
+    #[test]
+    fn custom_token_regex() {
+        let g = parse_semtree_dsl(
+            r#"
+language x
+token Arrow := /->/
+Rule := Arrow
+"#,
+        )
+        .unwrap();
+        let lexer = RuntimeLexer::new(&g);
+        let toks = lexer.tokenize("->");
+        assert!(toks.iter().any(|t| matches!(t.kind, RuntimeTokenKind::Custom(0))));
+    }
+
+    #[test]
+    fn indent_tokens_basic() {
+        let g = parse_semtree_dsl(
+            r#"
+language py
+indent-sensitive
+keyword def
+Rule := "def" Identifier
+"#,
+        )
+        .unwrap();
+        let lexer = RuntimeLexer::new(&g);
+        let src = "def a:\n    pass\n";
+        let toks = lexer.tokenize(src);
+        assert!(toks.iter().any(|t| t.kind == RuntimeTokenKind::Indent));
+        assert!(toks.iter().any(|t| t.kind == RuntimeTokenKind::Dedent));
     }
 }

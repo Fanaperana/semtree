@@ -1,5 +1,7 @@
 language python
 
+indent-sensitive
+
 keyword def
 keyword class
 keyword return
@@ -123,7 +125,7 @@ BaseClassTail :=
     "," Expression
 
 Body :=
-    Statement+
+    INDENT Statement+ DEDENT
 
 # ── Control Flow ─────────────────────────────────────────────
 
