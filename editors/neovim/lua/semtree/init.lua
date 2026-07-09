@@ -113,11 +113,28 @@ end
 function M.format_buffer()
     local file = vim.api.nvim_buf_get_name(0)
     if file == "" then return end
+
+    -- Save first so the CLI sees the latest buffer content
+    if vim.bo.modified then
+        vim.cmd("write")
+    end
+
     local cmd = string.format("%s format %s", M.config.binary_path, vim.fn.shellescape(file))
     local output = vim.fn.system(cmd)
-    if vim.v.shell_error == 0 then
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(output, "\n"))
+    if vim.v.shell_error ~= 0 then
+        vim.notify("SemTree format failed: " .. output, vim.log.levels.ERROR)
+        return
     end
+
+    -- Drop trailing empty line from split so we don't add an extra blank
+    local lines = vim.split(output, "\n", { plain = true })
+    if #lines > 0 and lines[#lines] == "" then
+        table.remove(lines)
+    end
+
+    local view = vim.fn.winsaveview()
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+    vim.fn.winrestview(view)
 end
 
 return M
