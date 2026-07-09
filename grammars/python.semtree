@@ -51,7 +51,7 @@ Statement :=
     | ReturnStmt | ImportStmt | FromImport | RaiseStmt
     | AssertStmt | PassStmt | BreakStmt | ContinueStmt
     | DelStmt | GlobalStmt | NonlocalStmt
-    | AssignStmt | ExprStmt
+    | AugAssignStmt | AssignStmt | ExprStmt
 
 # ── Decorators ───────────────────────────────────────────────
 
@@ -253,6 +253,12 @@ IdentTail :=
 AssignStmt :=
     TargetList "=" ExpressionList
 
+AugAssignStmt :=
+    Target AugAssignOp Expression
+
+AugAssignOp :=
+    "+=" | "-=" | "*=" | "/=" | "//=" | "%=" | "**=" | "&=" | "|=" | "^=" | ">>=" | "<<="
+
 TargetList :=
     Target TargetTail*
 
@@ -317,7 +323,7 @@ CompareTail :=
     CompareOp AddExpr
 
 CompareOp :=
-    "==" | "!=" | "<" | ">" | "<=" | ">=" | "in" | "is"
+    "==" | "!=" | "<" | ">" | "<=" | ">=" | "in" | "is" | "not"
 
 AddExpr :=
     MulExpr AddTail*
@@ -335,11 +341,17 @@ MulTail :=
     MulOp UnaryExpr
 
 MulOp :=
-    "*" | "/" | "//" | "%"
+    "*" | "/" | "//" | "%" | "@"
 
 UnaryExpr :=
     UnaryOp UnaryExpr
-    | PostfixExpr
+    | PowerExpr
+
+PowerExpr :=
+    PostfixExpr PowerTail?
+
+PowerTail :=
+    "**" UnaryExpr
 
 UnaryOp :=
     "-" | "+" | "~"
@@ -374,7 +386,23 @@ AttrAccessOp :=
 # ── Primary ──────────────────────────────────────────────────
 
 PrimaryExpr :=
-    ParenExpr | ListLiteral | DictLiteral | FStringExpr | Literal | Identifier
+    ParenExpr | ListLiteral | DictOrSetLiteral | FStringExpr
+    | EllipsisLiteral | StarredExpr | YieldExpr | AwaitExpr | Literal | Identifier
+
+EllipsisLiteral :=
+    "..."
+
+StarredExpr :=
+    "*" Expression
+
+YieldExpr :=
+    "yield" YieldFrom?
+
+YieldFrom :=
+    "from" Expression
+
+AwaitExpr :=
+    "await" Expression
 
 ParenExpr :=
     "(" Expression TupleRest? ")"
@@ -388,8 +416,38 @@ TupleElements :=
 TupleElemTail :=
     "," Expression
 
+DictOrSetLiteral :=
+    "{" DictOrSetBody? "}"
+
+DictOrSetBody :=
+    DictComprehension | SetComprehension | DictEntries | SetEntries
+
+SetEntries :=
+    Expression SetEntryTail* ","?
+
+SetEntryTail :=
+    "," Expression
+
+DictComprehension :=
+    DictEntry CompForClause+
+
+SetComprehension :=
+    Expression CompForClause+
+
+CompForClause :=
+    "for" Target "in" Expression CompIfClause*
+
+CompIfClause :=
+    "if" Expression
+
 ListLiteral :=
-    "[" ListElements? "]"
+    "[" ListBody? "]"
+
+ListBody :=
+    ListComprehension | ListElements
+
+ListComprehension :=
+    Expression CompForClause+
 
 ListElements :=
     Expression ListElemTail*
@@ -397,11 +455,8 @@ ListElements :=
 ListElemTail :=
     "," Expression
 
-DictLiteral :=
-    "{" DictEntries? "}"
-
 DictEntries :=
-    DictEntry DictEntryTail*
+    DictEntry DictEntryTail* ","?
 
 DictEntryTail :=
     "," DictEntry

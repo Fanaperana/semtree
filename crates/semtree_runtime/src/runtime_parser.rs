@@ -76,11 +76,36 @@ impl RuntimeParser {
 
         ctx.builder.start_node(SyntaxKind::SOURCE_FILE);
 
-        while !ctx.at_eof() {
-            let before = ctx.pos;
-            ctx.parse_rule(&entry_rule);
-            if ctx.pos == before {
-                ctx.error_recover("unexpected token");
+        // Determine the repeating child rule from the entry rule.
+        // If entry is `Module := Statement*`, we want to loop over Statement.
+        let child_rule = self.extract_repeat_child(&entry_rule);
+
+        match child_rule {
+            Some(child) => {
+                // Parse the entry rule's children individually with per-item recovery.
+                let node_kind = rule_name_to_kind(&entry_rule);
+                ctx.builder.start_node(node_kind);
+                while !ctx.at_eof() {
+                    let before = ctx.pos;
+                    if ctx.parse_rule(&child) {
+                        continue;
+                    }
+                    // Failed to parse a child item — skip to recovery point.
+                    if ctx.pos == before {
+                        ctx.error_recover("unexpected token");
+                    }
+                }
+                ctx.builder.finish_node();
+            }
+            None => {
+                // Fallback: parse entry rule as-is, with recovery loop.
+                while !ctx.at_eof() {
+                    let before = ctx.pos;
+                    ctx.parse_rule(&entry_rule);
+                    if ctx.pos == before {
+                        ctx.error_recover("unexpected token");
+                    }
+                }
             }
         }
 
@@ -118,6 +143,35 @@ impl RuntimeParser {
 
     pub fn grammar(&self) -> &Grammar {
         &self.grammar
+    }
+
+    /// If the entry rule is `Foo := Bar*` or `Foo := Bar+`, return "Bar".
+    /// This lets the top-level loop parse each Bar individually with recovery.
+    fn extract_repeat_child(&self, entry_rule: &str) -> Option<String> {
+        let rule = self.grammar.rules.get(entry_rule)?;
+        match &rule.expr {
+            RuleExpr::Repeat(inner) | RuleExpr::Repeat1(inner) => {
+                if let RuleExpr::RuleRef(name) = inner.as_ref() {
+                    Some(name.to_string())
+                } else if let RuleExpr::Choice(_) = inner.as_ref() {
+                    // Entry rule is `Foo := (A | B | C)*` — we can't extract
+                    // a single child, but we can still benefit from looping.
+                    None
+                } else {
+                    None
+                }
+            }
+            // Entry rule like `Foo := Statement*` at the end of a Seq
+            RuleExpr::Seq(parts) if parts.len() == 1 => {
+                if let RuleExpr::Repeat(inner) | RuleExpr::Repeat1(inner) = &parts[0] {
+                    if let RuleExpr::RuleRef(name) = inner.as_ref() {
+                        return Some(name.to_string());
+                    }
+                }
+                None
+            }
+            _ => None,
+        }
     }
 }
 
@@ -254,20 +308,46 @@ impl<'a> ParseContext<'a> {
 
         // Consume tokens until we hit a recovery point.
         let mut count = 0;
+        let mut brace_depth: i32 = 0;
         while !self.at_eof() && count < 50 {
             let text = self.peek_text();
-            if count > 0 && RECOVERY_TOKENS.contains(&text) {
+
+            // Track brace/bracket nesting so we don't stop inside blocks.
+            if text == "{" || text == "(" || text == "[" {
+                brace_depth += 1;
+            } else if text == "}" || text == ")" || text == "]" {
+                if brace_depth > 0 {
+                    brace_depth -= 1;
+                } else if count > 0 {
+                    // Stop at unmatched closer.
+                    break;
+                }
+            }
+
+            // Stop at recovery tokens only at the outer level.
+            if count > 0 && brace_depth == 0 && self.is_recovery_token(text) {
                 break;
             }
-            // Stop at block closers.
-            if count > 0 && (text == "}" || text == ")") {
-                break;
-            }
+
             self.bump();
             count += 1;
         }
 
         self.builder.finish_node();
+    }
+
+    /// Check if a token text is a recovery point (statement/item start).
+    fn is_recovery_token(&self, text: &str) -> bool {
+        // Check hardcoded recovery tokens first.
+        if RECOVERY_TOKENS.contains(&text) {
+            return true;
+        }
+        // Also recover at any grammar keyword that typically starts statements.
+        if let Some(kw_text) = self.tokens.get(self.skip_trivia_pos()) {
+            matches!(kw_text.kind, RuntimeTokenKind::Keyword(_))
+        } else {
+            false
+        }
     }
 
     /// Emit an error and try to insert a missing token (phantom token).
@@ -350,8 +430,17 @@ impl<'a> ParseContext<'a> {
         let matched = self.parse_expr(&rule.expr);
 
         if !matched {
-            self.builder.rollback(save_builder);
-            self.pos = save_pos;
+            // If we consumed tokens but still failed, keep what we have as a
+            // partial node rather than throwing it all away. This preserves
+            // tree structure for error recovery.
+            if self.pos > save_pos {
+                // We made progress — finish the node with what we have.
+                self.builder.finish_node();
+            } else {
+                // No progress at all — full rollback.
+                self.builder.rollback(save_builder);
+                self.pos = save_pos;
+            }
             self.depth -= 1;
             self.in_progress.remove(&guard_key);
             return false;
@@ -466,15 +555,39 @@ impl<'a> ParseContext<'a> {
         for (i, expr) in exprs.iter().enumerate() {
             if !self.parse_expr(expr) {
                 if i > 0 {
-                    // Only recover for missing small closing literals near the
-                    // end of a sequence (e.g. missing ";" or ")" after all
-                    // meaningful content matched).
+                    // We already matched some children. Try to recover rather
+                    // than failing the entire sequence.
+
+                    // Case 1: missing small closing literal at the end of a
+                    // sequence (e.g. missing ";" or ")" or "}").
                     if let RuleExpr::Literal(lit) = expr {
-                        let is_last = i == exprs.len() - 1;
-                        if lit.len() <= 2 && is_last {
+                        if lit.len() <= 2 {
+                            self.error_missing(&format!("'{lit}'"));
+                            // If this is the last element, we're done.
+                            if i == exprs.len() - 1 {
+                                continue;
+                            }
+                            // If not, keep parsing the remaining elements.
+                            continue;
+                        }
+                    }
+
+                    // Case 2: missing small literal in the middle (e.g. ":" or
+                    // "," separator). Insert phantom and try continuing.
+                    if let RuleExpr::Literal(lit) = expr {
+                        if lit.len() <= 2 && i + 1 < exprs.len() {
                             self.error_missing(&format!("'{lit}'"));
                             continue;
                         }
+                    }
+
+                    // Case 3: an optional-like position — if the remaining
+                    // elements are all Optional, we can succeed here.
+                    let all_remaining_optional = exprs[i..].iter().all(|e| {
+                        matches!(e, RuleExpr::Optional(_) | RuleExpr::Repeat(_))
+                    });
+                    if all_remaining_optional {
+                        return true;
                     }
                 }
                 return false;

@@ -50,7 +50,25 @@ Item :=
     OuterAttr* Visibility? ItemBody
 
 ItemBody :=
-    FnItem | StructItem | EnumItem | ImplItem | TraitItem | ModItem | UseItem | ConstItem | StaticItem | TypeAliasItem
+    FnItem | StructItem | EnumItem | ImplItem | TraitItem | ModItem | UseItem
+    | ConstItem | StaticItem | TypeAliasItem | ExternBlock | MacroCallItem
+
+# ── Extern Block ─────────────────────────────────────────────
+
+ExternBlock :=
+    "extern" ExternAbi? "{" ExternMember* "}"
+
+ExternAbi :=
+    String
+
+ExternMember :=
+    OuterAttr* Visibility? ExternMemberBody
+
+ExternMemberBody :=
+    FnItem | StaticItem | TypeAliasItem
+
+MacroCallItem :=
+    MacroCall ";"?
 
 Visibility :=
     "pub" PubScope?
@@ -678,7 +696,7 @@ PathSegment :=
 # ── Literals ─────────────────────────────────────────────────
 
 Literal :=
-    String | Char | Integer | Float | BoolLiteral
+    String | Integer | Float | BoolLiteral
 
 BoolLiteral :=
     "true" | "false"

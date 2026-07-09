@@ -1,15 +1,29 @@
-//! Minimal LSP server: incremental parsing, diagnostics, document symbols.
+//! LSP server: incremental parsing, diagnostics, document symbols,
+//! completion, hover, go-to-definition, find-references, semantic tokens,
+//! formatting, and folding.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use lsp_server::{Connection, Message, Notification, Request, Response};
 use lsp_types::{
-    Diagnostic, DiagnosticSeverity, DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse,
-    OneOf, Position, Range, ServerCapabilities, SymbolKind, TextDocumentSyncCapability,
-    TextDocumentSyncKind, TextDocumentSyncOptions, Uri,
+    CompletionItem as LspCompletionItem, CompletionOptions, CompletionParams, CompletionResponse,
+    Diagnostic, DiagnosticSeverity, DocumentFormattingParams, DocumentSymbol,
+    DocumentSymbolParams, DocumentSymbolResponse, FoldingRange as LspFoldingRange,
+    FoldingRangeKind, FoldingRangeParams, FoldingRangeProviderCapability, GotoDefinitionParams,
+    GotoDefinitionResponse, Hover, HoverContents, HoverParams, HoverProviderCapability,
+    Location, MarkupContent, MarkupKind, OneOf, Position, Range, ReferenceParams,
+    SemanticToken as LspSemanticToken, SemanticTokenType as LspSemanticTokenType,
+    SemanticTokens, SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
+    SemanticTokensParams, SemanticTokensResult, SemanticTokensServerCapabilities,
+    ServerCapabilities, SymbolKind, TextDocumentSyncCapability, TextDocumentSyncKind,
+    TextDocumentSyncOptions, TextEdit, Uri,
 };
-use semtree_ide::document_symbols as ide_symbols;
+use semtree_ide::{
+    classify_tokens as ide_classify, complete_at as ide_complete,
+    document_symbols as ide_symbols, find_references as ide_references, folding_ranges as ide_fold,
+    goto_definition as ide_goto_def, hover_info as ide_hover,
+};
 use semtree_runtime::{ParseSession, ParserBackend};
 use semtree_semantic::SemanticModel;
 
@@ -68,6 +82,19 @@ pub fn lsp(exe_dir: PathBuf) -> super::Result {
 }
 
 fn server_capabilities() -> ServerCapabilities {
+    let token_types = vec![
+        LspSemanticTokenType::KEYWORD,
+        LspSemanticTokenType::TYPE,
+        LspSemanticTokenType::FUNCTION,
+        LspSemanticTokenType::VARIABLE,
+        LspSemanticTokenType::STRING,
+        LspSemanticTokenType::NUMBER,
+        LspSemanticTokenType::COMMENT,
+        LspSemanticTokenType::OPERATOR,
+        LspSemanticTokenType::PARAMETER,
+        LspSemanticTokenType::PROPERTY,
+        LspSemanticTokenType::ENUM_MEMBER,
+    ];
     ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Options(
             TextDocumentSyncOptions {
@@ -77,6 +104,26 @@ fn server_capabilities() -> ServerCapabilities {
             },
         )),
         document_symbol_provider: Some(OneOf::Left(true)),
+        completion_provider: Some(CompletionOptions {
+            trigger_characters: Some(vec![".".into(), ":".into()]),
+            ..Default::default()
+        }),
+        hover_provider: Some(HoverProviderCapability::Simple(true)),
+        definition_provider: Some(OneOf::Left(true)),
+        references_provider: Some(OneOf::Left(true)),
+        document_formatting_provider: Some(OneOf::Left(true)),
+        folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
+        semantic_tokens_provider: Some(
+            SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions {
+                legend: SemanticTokensLegend {
+                    token_types,
+                    token_modifiers: vec![],
+                },
+                full: Some(SemanticTokensFullOptions::Bool(true)),
+                range: None,
+                ..Default::default()
+            }),
+        ),
         ..Default::default()
     }
 }
@@ -105,6 +152,150 @@ fn handle_request(
                     id,
                     DocumentSymbolResponse::Nested(symbols),
                 )))?;
+        }
+        "textDocument/completion" => {
+            let (id, params): (_, CompletionParams) =
+                match req.extract("textDocument/completion") {
+                    Ok(v) => v,
+                    Err(e) => return Err(format!("{e:?}").into()),
+                };
+            let key = uri_key(&params.text_document_position.text_document.uri);
+            let items = documents
+                .get(&key)
+                .map(|doc| completion_for_doc(doc, params.text_document_position.position))
+                .unwrap_or_default();
+            connection
+                .sender
+                .send(Message::Response(Response::new_ok(
+                    id,
+                    CompletionResponse::Array(items),
+                )))?;
+        }
+        "textDocument/hover" => {
+            let (id, params): (_, HoverParams) = match req.extract("textDocument/hover") {
+                Ok(v) => v,
+                Err(e) => return Err(format!("{e:?}").into()),
+            };
+            let key = uri_key(&params.text_document_position_params.text_document.uri);
+            let hover = documents
+                .get(&key)
+                .and_then(|doc| hover_for_doc(doc, params.text_document_position_params.position));
+            connection
+                .sender
+                .send(Message::Response(Response::new_ok(id, hover)))?;
+        }
+        "textDocument/definition" => {
+            let (id, params): (_, GotoDefinitionParams) =
+                match req.extract("textDocument/definition") {
+                    Ok(v) => v,
+                    Err(e) => return Err(format!("{e:?}").into()),
+                };
+            let uri = params.text_document_position_params.text_document.uri.clone();
+            let key = uri_key(&uri);
+            let def = documents.get(&key).and_then(|doc| {
+                let offset = position_to_offset(
+                    doc.session.source(),
+                    params.text_document_position_params.position,
+                );
+                let root = doc.session.syntax()?;
+                let model = SemanticModel::analyze(root);
+                ide_goto_def(root, &model, offset).map(|range| {
+                    let start = byte_to_position(doc.session.source(), u32::from(range.start()));
+                    let end = byte_to_position(doc.session.source(), u32::from(range.end()));
+                    GotoDefinitionResponse::Scalar(Location {
+                        uri: uri.clone(),
+                        range: Range { start, end },
+                    })
+                })
+            });
+            connection
+                .sender
+                .send(Message::Response(Response::new_ok(id, def)))?;
+        }
+        "textDocument/references" => {
+            let (id, params): (_, ReferenceParams) =
+                match req.extract("textDocument/references") {
+                    Ok(v) => v,
+                    Err(e) => return Err(format!("{e:?}").into()),
+                };
+            let uri = params.text_document_position.text_document.uri.clone();
+            let key = uri_key(&uri);
+            let refs: Vec<Location> = documents
+                .get(&key)
+                .map(|doc| {
+                    let offset =
+                        position_to_offset(doc.session.source(), params.text_document_position.position);
+                    let Some(root) = doc.session.syntax() else {
+                        return vec![];
+                    };
+                    let model = SemanticModel::analyze(root);
+                    ide_references(root, &model, offset)
+                        .into_iter()
+                        .map(|range| {
+                            let start =
+                                byte_to_position(doc.session.source(), u32::from(range.start()));
+                            let end =
+                                byte_to_position(doc.session.source(), u32::from(range.end()));
+                            Location {
+                                uri: uri.clone(),
+                                range: Range { start, end },
+                            }
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            connection
+                .sender
+                .send(Message::Response(Response::new_ok(id, refs)))?;
+        }
+        "textDocument/semanticTokens/full" => {
+            let (id, params): (_, SemanticTokensParams) =
+                match req.extract("textDocument/semanticTokens/full") {
+                    Ok(v) => v,
+                    Err(e) => return Err(format!("{e:?}").into()),
+                };
+            let key = uri_key(&params.text_document.uri);
+            let tokens = documents
+                .get(&key)
+                .map(|doc| semantic_tokens_for_doc(doc))
+                .unwrap_or_default();
+            connection.sender.send(Message::Response(Response::new_ok(
+                id,
+                SemanticTokensResult::Tokens(SemanticTokens {
+                    result_id: None,
+                    data: tokens,
+                }),
+            )))?;
+        }
+        "textDocument/formatting" => {
+            let (id, params): (_, DocumentFormattingParams) =
+                match req.extract("textDocument/formatting") {
+                    Ok(v) => v,
+                    Err(e) => return Err(format!("{e:?}").into()),
+                };
+            let key = uri_key(&params.text_document.uri);
+            let edits = documents
+                .get(&key)
+                .map(|doc| format_doc(doc))
+                .unwrap_or_default();
+            connection
+                .sender
+                .send(Message::Response(Response::new_ok(id, edits)))?;
+        }
+        "textDocument/foldingRange" => {
+            let (id, params): (_, FoldingRangeParams) =
+                match req.extract("textDocument/foldingRange") {
+                    Ok(v) => v,
+                    Err(e) => return Err(format!("{e:?}").into()),
+                };
+            let key = uri_key(&params.text_document.uri);
+            let ranges = documents
+                .get(&key)
+                .map(|doc| folding_for_doc(doc))
+                .unwrap_or_default();
+            connection
+                .sender
+                .send(Message::Response(Response::new_ok(id, ranges)))?;
         }
         _ => {
             connection.sender.send(Message::Response(Response::new_err(
@@ -341,4 +532,163 @@ fn byte_to_position(source: &str, byte: u32) -> Position {
         line: source.lines().count().saturating_sub(1) as u32,
         character: 0,
     }
+}
+
+fn position_to_offset(source: &str, pos: Position) -> u32 {
+    let mut offset = 0u32;
+    for (i, line) in source.lines().enumerate() {
+        if i == pos.line as usize {
+            return offset + pos.character.min(line.len() as u32);
+        }
+        offset += line.len() as u32 + 1;
+    }
+    source.len() as u32
+}
+
+fn completion_for_doc(doc: &DocumentState, position: Position) -> Vec<LspCompletionItem> {
+    let Some(root) = doc.session.syntax() else {
+        return vec![];
+    };
+    let model = SemanticModel::analyze(root);
+    let offset = position_to_offset(doc.session.source(), position);
+    ide_complete(root, &model, offset)
+        .into_iter()
+        .map(|item| {
+            use semtree_ide::CompletionKind;
+            let kind = match item.kind {
+                CompletionKind::Keyword => Some(lsp_types::CompletionItemKind::KEYWORD),
+                CompletionKind::Function => Some(lsp_types::CompletionItemKind::FUNCTION),
+                CompletionKind::Variable => Some(lsp_types::CompletionItemKind::VARIABLE),
+                CompletionKind::Snippet => Some(lsp_types::CompletionItemKind::SNIPPET),
+            };
+            LspCompletionItem {
+                label: item.label.to_string(),
+                kind,
+                detail: item.detail.map(|d| d.to_string()),
+                ..Default::default()
+            }
+        })
+        .collect()
+}
+
+fn hover_for_doc(doc: &DocumentState, position: Position) -> Option<Hover> {
+    let root = doc.session.syntax()?;
+    let model = SemanticModel::analyze(root);
+    let offset = position_to_offset(doc.session.source(), position);
+    let info = ide_hover(root, &model, offset)?;
+    Some(Hover {
+        contents: HoverContents::Markup(MarkupContent {
+            kind: MarkupKind::Markdown,
+            value: format!("**{}** — {}", info.name, info.kind),
+        }),
+        range: Some(Range {
+            start: byte_to_position(doc.session.source(), u32::from(info.range.start())),
+            end: byte_to_position(doc.session.source(), u32::from(info.range.end())),
+        }),
+    })
+}
+
+fn semantic_tokens_for_doc(doc: &DocumentState) -> Vec<LspSemanticToken> {
+    let Some(root) = doc.session.syntax() else {
+        return vec![];
+    };
+    let model = SemanticModel::analyze(root);
+    let tokens = ide_classify(root, &model);
+
+    let mut result = Vec::with_capacity(tokens.len());
+    let mut prev_line = 0u32;
+    let mut prev_start = 0u32;
+
+    for tok in &tokens {
+        let start = byte_to_position(doc.session.source(), u32::from(tok.range.start()));
+        let end = byte_to_position(doc.session.source(), u32::from(tok.range.end()));
+        let length = if start.line == end.line {
+            end.character - start.character
+        } else {
+            u32::from(tok.range.end()) - u32::from(tok.range.start())
+        };
+
+        let delta_line = start.line - prev_line;
+        let delta_start = if delta_line == 0 {
+            start.character - prev_start
+        } else {
+            start.character
+        };
+
+        use semtree_ide::SemanticTokenType;
+        let token_type = match tok.token_type {
+            SemanticTokenType::Keyword => 0,
+            SemanticTokenType::Type => 1,
+            SemanticTokenType::Function => 2,
+            SemanticTokenType::Variable => 3,
+            SemanticTokenType::String => 4,
+            SemanticTokenType::Number => 5,
+            SemanticTokenType::Comment => 6,
+            SemanticTokenType::Operator => 7,
+            SemanticTokenType::Parameter => 8,
+            SemanticTokenType::Property => 9,
+            SemanticTokenType::Enum => 10,
+        };
+
+        result.push(LspSemanticToken {
+            delta_line,
+            delta_start,
+            length,
+            token_type,
+            token_modifiers_bitset: 0,
+        });
+
+        prev_line = start.line;
+        prev_start = start.character;
+    }
+
+    result
+}
+
+fn format_doc(doc: &DocumentState) -> Vec<TextEdit> {
+    let Some(root) = doc.session.syntax() else {
+        return vec![];
+    };
+    let formatted = semtree_format::Formatter::with_defaults().format(root);
+    let source = doc.session.source();
+    if formatted == source {
+        return vec![];
+    }
+    // Single whole-document edit
+    let last_line = source.lines().count().saturating_sub(1) as u32;
+    let last_col = source.lines().last().map(|l| l.len() as u32).unwrap_or(0);
+    vec![TextEdit {
+        range: Range {
+            start: Position {
+                line: 0,
+                character: 0,
+            },
+            end: Position {
+                line: last_line,
+                character: last_col,
+            },
+        },
+        new_text: formatted,
+    }]
+}
+
+fn folding_for_doc(doc: &DocumentState) -> Vec<LspFoldingRange> {
+    let Some(root) = doc.session.syntax() else {
+        return vec![];
+    };
+    ide_fold(root)
+        .into_iter()
+        .map(|r| {
+            let start = byte_to_position(doc.session.source(), u32::from(r.range.start()));
+            let end = byte_to_position(doc.session.source(), u32::from(r.range.end()));
+            LspFoldingRange {
+                start_line: start.line,
+                start_character: Some(start.character),
+                end_line: end.line,
+                end_character: Some(end.character),
+                kind: Some(FoldingRangeKind::Region),
+                collapsed_text: None,
+            }
+        })
+        .collect()
 }

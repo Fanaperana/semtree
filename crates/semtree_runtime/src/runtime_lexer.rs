@@ -64,6 +64,8 @@ pub struct RuntimeLexer {
     token_names: Vec<SmolStr>,
     extra_patterns: Vec<CompiledExtra>,
     indent_sensitive: bool,
+    /// Whether the grammar uses `#` as a comment prefix (e.g. Python, Ruby).
+    hash_comments: bool,
 }
 
 impl RuntimeLexer {
@@ -107,6 +109,23 @@ impl RuntimeLexer {
 
         let extra_patterns = Self::compile_extras(grammar);
 
+        // Detect whether the grammar uses `#` for comments.
+        // Check extras patterns, or infer from language name / indent-sensitive flag.
+        let has_hash_extra = extra_patterns.iter().any(|e| {
+            matches!(e.kind, RuntimeTokenKind::LineComment)
+        });
+        let hash_comments = has_hash_extra
+            || grammar.indent_sensitive
+            || grammar.name.as_str() == "python"
+            || grammar.name.as_str() == "ruby"
+            || grammar.name.as_str() == "bash"
+            || grammar.name.as_str() == "shell"
+            || grammar.name.as_str() == "toml"
+            || grammar.name.as_str() == "yaml";
+
+        // If grammar uses `#` as comments but no extras pattern is defined,
+        // ensure `#` is not treated as a literal error token.
+
         Self {
             keywords,
             literals,
@@ -114,6 +133,7 @@ impl RuntimeLexer {
             token_names,
             extra_patterns,
             indent_sensitive: grammar.indent_sensitive,
+            hash_comments,
         }
     }
 
@@ -284,6 +304,19 @@ impl RuntimeLexer {
                 continue;
             }
 
+            // Hash comments (#... until newline) for Python, Ruby, etc.
+            if self.hash_comments && bytes[pos] == b'#' {
+                while pos < source.len() && bytes[pos] != b'\n' {
+                    pos += 1;
+                }
+                tokens.push(RawToken {
+                    kind: RuntimeTokenKind::LineComment,
+                    text: source[start..pos].into(),
+                    range: Self::make_range(start, pos),
+                });
+                continue;
+            }
+
             // String literal (also f"/F" prefix via custom token first)
             if self.try_custom_tokens(source, pos, &mut tokens, &mut pos) {
                 continue;
@@ -291,6 +324,36 @@ impl RuntimeLexer {
 
             if bytes[pos] == b'"' || bytes[pos] == b'\'' {
                 let quote = bytes[pos];
+
+                // Triple-quoted strings ("""...""" or '''...''')
+                if pos + 2 < source.len() && bytes[pos + 1] == quote && bytes[pos + 2] == quote {
+                    pos += 3;
+                    while pos + 2 < source.len() {
+                        if bytes[pos] == b'\\' {
+                            pos += 2;
+                        } else if bytes[pos] == quote
+                            && bytes[pos + 1] == quote
+                            && bytes[pos + 2] == quote
+                        {
+                            pos += 3;
+                            break;
+                        } else {
+                            pos += 1;
+                        }
+                    }
+                    // Handle case where we ran out of input
+                    if pos > source.len() {
+                        pos = source.len();
+                    }
+                    tokens.push(RawToken {
+                        kind: RuntimeTokenKind::StringLit,
+                        text: source[start..pos].into(),
+                        range: Self::make_range(start, pos),
+                    });
+                    continue;
+                }
+
+                // Single-quoted string
                 pos += 1;
                 while pos < source.len() {
                     if bytes[pos] == b'\\' {
@@ -310,8 +373,57 @@ impl RuntimeLexer {
                 continue;
             }
 
-            // Number
+            // Number (including 0x, 0o, 0b prefixes)
             if bytes[pos].is_ascii_digit() {
+                if bytes[pos] == b'0' && pos + 1 < source.len() {
+                    match bytes[pos + 1] {
+                        b'x' | b'X' => {
+                            pos += 2;
+                            while pos < source.len()
+                                && (bytes[pos].is_ascii_hexdigit() || bytes[pos] == b'_')
+                            {
+                                pos += 1;
+                            }
+                            tokens.push(RawToken {
+                                kind: RuntimeTokenKind::Integer,
+                                text: source[start..pos].into(),
+                                range: Self::make_range(start, pos),
+                            });
+                            continue;
+                        }
+                        b'o' | b'O' => {
+                            pos += 2;
+                            while pos < source.len()
+                                && ((bytes[pos] >= b'0' && bytes[pos] <= b'7') || bytes[pos] == b'_')
+                            {
+                                pos += 1;
+                            }
+                            tokens.push(RawToken {
+                                kind: RuntimeTokenKind::Integer,
+                                text: source[start..pos].into(),
+                                range: Self::make_range(start, pos),
+                            });
+                            continue;
+                        }
+                        b'b' | b'B' if pos + 2 < source.len()
+                            && (bytes[pos + 2] == b'0' || bytes[pos + 2] == b'1') =>
+                        {
+                            pos += 2;
+                            while pos < source.len()
+                                && (bytes[pos] == b'0' || bytes[pos] == b'1' || bytes[pos] == b'_')
+                            {
+                                pos += 1;
+                            }
+                            tokens.push(RawToken {
+                                kind: RuntimeTokenKind::Integer,
+                                text: source[start..pos].into(),
+                                range: Self::make_range(start, pos),
+                            });
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
                 while pos < source.len() && (bytes[pos].is_ascii_digit() || bytes[pos] == b'_') {
                     pos += 1;
                 }

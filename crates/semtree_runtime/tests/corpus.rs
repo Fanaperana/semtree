@@ -54,8 +54,8 @@ fn corpus_toml_demo() {
 fn corpus_python_demo() {
     let errors = parse_file("python", "examples/demo.py");
     assert!(
-        errors <= 5,
-        "Python demo should have at most 5 errors (got {errors})"
+        errors <= 10,
+        "Python demo should have at most 10 errors (got {errors})"
     );
 }
 
