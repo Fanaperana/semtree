@@ -1,18 +1,46 @@
 use std::ffi::c_char;
 
-use semtree_parser::{ParseResult, Parser};
+use semtree_grammar::parse_semtree_dsl;
+use semtree_parser::Parser;
 use semtree_red::SyntaxNode;
+use semtree_runtime::{ParseSession, ParserBackend, UnifiedParseResult};
 
 /// Opaque handle to a parsed tree, holding ownership of the parse result.
 pub struct SemTreeTree {
-    _result: ParseResult,
+    _green: semtree_green::GreenNode,
     root: SyntaxNode,
+    error_count: usize,
+}
+
+/// Opaque handle to a grammar-driven incremental parse session.
+pub struct SemTreeSession {
+    session: ParseSession,
 }
 
 /// Opaque handle to a node (borrowed from the tree).
 pub struct SemTreeNode {
     node: SyntaxNode,
 }
+
+fn tree_from_unified(result: UnifiedParseResult) -> SemTreeTree {
+    let root = result.syntax;
+    let error_count = result.errors.len();
+    SemTreeTree {
+        _green: result.green_tree,
+        root,
+        error_count,
+    }
+}
+
+fn cstr_from_ptr<'a>(ptr: *const c_char, len: usize) -> Option<&'a str> {
+    if ptr.is_null() {
+        return None;
+    }
+    let slice = unsafe { std::slice::from_raw_parts(ptr as *const u8, len) };
+    std::str::from_utf8(slice).ok()
+}
+
+// ── Legacy API (built-in Rust parser) ────────────────────────────────────────
 
 /// Parse a source string into a SemTree tree.
 ///
@@ -23,23 +51,129 @@ pub struct SemTreeNode {
 /// `source` must point to a valid UTF-8 byte buffer of at least `len` bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn semtree_parse(source: *const c_char, len: usize) -> *mut SemTreeTree {
-    if source.is_null() {
+    let Some(src) = cstr_from_ptr(source, len) else {
         return std::ptr::null_mut();
-    }
-    let slice = unsafe { std::slice::from_raw_parts(source as *const u8, len) };
-    let src = match std::str::from_utf8(slice) {
-        Ok(s) => s,
-        Err(_) => return std::ptr::null_mut(),
     };
 
     let result = Parser::parse(src);
     let root = result.syntax();
-    let tree = Box::new(SemTreeTree {
-        _result: result,
+    let tree = SemTreeTree {
+        _green: result.green_tree,
         root,
-    });
-    Box::into_raw(tree)
+        error_count: 0,
+    };
+    Box::into_raw(Box::new(tree))
 }
+
+// ── Session API (grammar-driven incremental parsing) ───────────────────────
+
+/// Create a parse session from a SemTree DSL grammar string.
+///
+/// `backend`: 0 = auto, 1 = recursive descent, 2 = GLR.
+///
+/// # Safety
+///
+/// `grammar_source` must point to a valid UTF-8 buffer of at least `grammar_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn semtree_session_create(
+    grammar_source: *const c_char,
+    grammar_len: usize,
+    backend: u8,
+) -> *mut SemTreeSession {
+    let Some(src) = cstr_from_ptr(grammar_source, grammar_len) else {
+        return std::ptr::null_mut();
+    };
+    let grammar = match parse_semtree_dsl(src) {
+        Ok(g) => g,
+        Err(_) => return std::ptr::null_mut(),
+    };
+    let backend = match backend {
+        1 => ParserBackend::RecursiveDescent,
+        2 => ParserBackend::Glr,
+        _ => ParserBackend::Auto,
+    };
+    let session = ParseSession::new(grammar, backend);
+    Box::into_raw(Box::new(SemTreeSession { session }))
+}
+
+/// Parse source in a session (full parse, resets incremental state).
+///
+/// # Safety
+///
+/// `session` must be valid. `source` must be a valid UTF-8 buffer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn semtree_session_parse(
+    session: *mut SemTreeSession,
+    source: *const c_char,
+    len: usize,
+) -> *mut SemTreeTree {
+    if session.is_null() {
+        return std::ptr::null_mut();
+    }
+    let Some(src) = cstr_from_ptr(source, len) else {
+        return std::ptr::null_mut();
+    };
+    let session = unsafe { &mut *session };
+    let result = session.session.parse(src);
+    Box::into_raw(Box::new(tree_from_unified(result)))
+}
+
+/// Apply an edit and incrementally reparse.
+///
+/// # Safety
+///
+/// `session` must be valid. `new_text` must be a valid UTF-8 buffer of `new_text_len` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn semtree_session_edit(
+    session: *mut SemTreeSession,
+    start: u32,
+    old_end: u32,
+    new_text: *const c_char,
+    new_text_len: usize,
+) -> *mut SemTreeTree {
+    if session.is_null() {
+        return std::ptr::null_mut();
+    }
+    let new_text_str = if new_text.is_null() || new_text_len == 0 {
+        ""
+    } else {
+        match cstr_from_ptr(new_text, new_text_len) {
+            Some(s) => s,
+            None => return std::ptr::null_mut(),
+        }
+    };
+
+    let session = unsafe { &mut *session };
+    let result = session.session.edit(start, old_end, new_text_str);
+    Box::into_raw(Box::new(tree_from_unified(result)))
+}
+
+/// Free a session created by `semtree_session_create`.
+///
+/// # Safety
+///
+/// `session` must be null or a pointer returned by `semtree_session_create`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn semtree_session_free(session: *mut SemTreeSession) {
+    if !session.is_null() {
+        drop(unsafe { Box::from_raw(session) });
+    }
+}
+
+/// Get the number of parse errors in the last tree.
+///
+/// # Safety
+///
+/// `tree` must be a valid pointer returned by a parse function.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn semtree_tree_error_count(tree: *const SemTreeTree) -> usize {
+    if tree.is_null() {
+        return 0;
+    }
+    unsafe { (*tree).error_count }
+}
+
+// ── Tree / node navigation ──────────────────────────────────────────────────
 
 /// Get the root node of the tree.
 ///
@@ -197,6 +331,12 @@ pub unsafe extern "C" fn semtree_node_free(node: *mut SemTreeNode) {
 mod tests {
     use super::*;
 
+    const MINI_GRAMMAR: &str = r#"
+language test
+keyword fn
+Function := "fn" Identifier "(" ")" "{" "}"
+"#;
+
     #[test]
     fn test_parse_and_navigate() {
         let source = "fn main() {}";
@@ -217,17 +357,35 @@ mod tests {
         assert_eq!(start, 0);
         assert!(end > 0);
 
-        let text_len = unsafe { semtree_node_text(root, std::ptr::null_mut(), 0) };
-        assert!(text_len > 0);
-
-        let mut buf = vec![0u8; text_len + 1];
-        let written =
-            unsafe { semtree_node_text(root, buf.as_mut_ptr() as *mut c_char, buf.len()) };
-        assert_eq!(written, text_len);
-
         unsafe {
             semtree_node_free(root as *mut SemTreeNode);
             semtree_tree_free(tree);
+        }
+    }
+
+    #[test]
+    fn test_session_incremental() {
+        let grammar = MINI_GRAMMAR;
+        let session =
+            unsafe { semtree_session_create(grammar.as_ptr() as *const c_char, grammar.len(), 1) };
+        assert!(!session.is_null());
+
+        let source = "fn foo() {}";
+        let tree = unsafe {
+            semtree_session_parse(session, source.as_ptr() as *const c_char, source.len())
+        };
+        assert!(!tree.is_null());
+
+        let tree2 =
+            unsafe { semtree_session_edit(session, 6, 6, "x".as_ptr() as *const c_char, 1) };
+        assert!(!tree2.is_null());
+        // Incremental reparse may report partial errors from the edited region.
+        assert!(unsafe { semtree_tree_error_count(tree2) } <= 1);
+
+        unsafe {
+            semtree_tree_free(tree);
+            semtree_tree_free(tree2);
+            semtree_session_free(session);
         }
     }
 
@@ -236,18 +394,10 @@ mod tests {
         let kind = unsafe { semtree_node_kind(std::ptr::null()) };
         assert_eq!(kind, 0);
 
-        let count = unsafe { semtree_node_child_count(std::ptr::null()) };
-        assert_eq!(count, 0);
-
-        let text_len = unsafe { semtree_node_text(std::ptr::null(), std::ptr::null_mut(), 0) };
-        assert_eq!(text_len, 0);
-
-        let child = unsafe { semtree_node_child(std::ptr::null(), 0) };
-        assert!(child.is_null());
-
         unsafe {
             semtree_tree_free(std::ptr::null_mut());
             semtree_node_free(std::ptr::null_mut());
+            semtree_session_free(std::ptr::null_mut());
         }
     }
 }

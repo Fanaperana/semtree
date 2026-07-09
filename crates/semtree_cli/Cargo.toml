@@ -27,3 +27,7 @@ clap.workspace = true
 serde_json.workspace = true
 rustc-hash.workspace = true
 smol_str.workspace = true
+text-size.workspace = true
+lsp-server.workspace = true
+lsp-types.workspace = true
+crossbeam-channel.workspace = true

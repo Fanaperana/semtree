@@ -46,13 +46,32 @@ Module :=
 # ── Statements ───────────────────────────────────────────────
 
 Statement :=
-    FunctionDef | ClassDef | IfStmt | ForStmt | WhileStmt
+    DecoratedDef | FunctionDef | AsyncFunctionDef | ClassDef
+    | IfStmt | ForStmt | WhileStmt | TryStmt | WithStmt
     | ReturnStmt | ImportStmt | FromImport | RaiseStmt
     | AssertStmt | PassStmt | BreakStmt | ContinueStmt
     | DelStmt | GlobalStmt | NonlocalStmt
     | AssignStmt | ExprStmt
 
-# ── Function ─────────────────────────────────────────────────
+# ── Decorators ───────────────────────────────────────────────
+
+DecoratedDef :=
+    Decorator+ (FunctionDef | AsyncFunctionDef | ClassDef)
+
+Decorator :=
+    "@" Expression CallArgs?
+
+AsyncFunctionDef :=
+    "async" FunctionDef
+
+WithStmt :=
+    "with" WithItem WithItemTail* ":" Body
+
+WithItemTail :=
+    "," WithItem
+
+WithItem :=
+    Expression AsClause?
 
 FunctionDef :=
     "def" name: Identifier "(" ParamItems? ")" ReturnAnnotation? ":" Body
@@ -142,7 +161,7 @@ WhileStmt :=
     "while" condition: Expression ":" Body ElseClause?
 
 ForStmt :=
-    "for" target: Identifier "in" iter: Expression ":" Body ElseClause?
+    "for" target: Target "in" iter: Expression ":" Body ElseClause?
 
 # ── Exception Handling ───────────────────────────────────────
 
@@ -391,7 +410,7 @@ DictEntry :=
     Expression ":" Expression
 
 FStringExpr :=
-    Identifier String
+    String
 
 Literal :=
     String | Integer | Float | BoolLiteral | NoneLiteral

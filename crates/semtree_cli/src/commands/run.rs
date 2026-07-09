@@ -2,42 +2,13 @@ use std::path::{Path, PathBuf};
 
 use rustc_hash::FxHashMap;
 use semtree_core::SyntaxKind;
-use semtree_grammar::parse_semtree_dsl;
 use semtree_red::SyntaxNode;
-use semtree_runtime::{EditRegion, GlrParser, IncrementalParser, RuntimeParser, apply_edits};
-use semtree_ts_import::import_tree_sitter_grammar;
+use semtree_runtime::{
+    EditRegion, GlrParser, ParseSession, ParserBackend, RuntimeParser, select_backend,
+};
 use smol_str::SmolStr;
 
-const GRAMMAR_SEARCH_DIRS: &[&str] = &["grammars", "../grammars", "../../grammars"];
-
-fn detect_grammar_path(file: &Path, exe_dir: &Path) -> Option<PathBuf> {
-    let ext = file.extension()?.to_str()?;
-    let grammar_name = match ext {
-        "js" | "jsx" | "mjs" | "cjs" => "javascript",
-        "ts" | "tsx" => "javascript",
-        "py" | "pyw" => "python",
-        "rs" => "rust",
-        "css" | "scss" | "less" => "css",
-        "json" => "json",
-        "toml" => "toml",
-        _ => return None,
-    };
-    let filename = format!("{grammar_name}.semtree");
-
-    for search_dir in GRAMMAR_SEARCH_DIRS {
-        let candidate = PathBuf::from(search_dir).join(&filename);
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-
-    let exe_grammar = exe_dir.join("grammars").join(&filename);
-    if exe_grammar.exists() {
-        return Some(exe_grammar);
-    }
-
-    None
-}
+use super::grammar_util::resolve_grammar;
 
 pub fn run(
     grammar_path: Option<PathBuf>,
@@ -49,30 +20,24 @@ pub fn run(
     edit: Option<&str>,
 ) -> super::Result {
     let source = std::fs::read_to_string(&file)?;
-
-    let grammar_path = match grammar_path {
-        Some(p) => p,
-        None => detect_grammar_path(&file, exe_dir).ok_or_else(|| {
-            let ext = file.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
-            format!(
-                "no grammar found for .{ext} files. Use -g to specify a grammar, or add one to grammars/{ext}.semtree\n\
-                 Supported: .js, .py, .rs, .css, .json, .toml"
-            )
-        })?,
-    };
+    let (grammar_path, grammar) = resolve_grammar(grammar_path, &file, exe_dir)?;
 
     eprintln!("Using grammar: {}", grammar_path.display());
-    let grammar_src = std::fs::read_to_string(&grammar_path)?;
 
-    let grammar = if grammar_path.extension().is_some_and(|ext| ext == "json") {
-        import_tree_sitter_grammar(&grammar_src)
-            .map_err(|e| format!("failed to import grammar: {e}"))?
-    } else {
-        parse_semtree_dsl(&grammar_src).map_err(|e| format!("failed to parse grammar: {e}"))?
+    let resolved_backend = match backend {
+        "auto" => select_backend(&grammar),
+        "glr" => ParserBackend::Glr,
+        _ => ParserBackend::RecursiveDescent,
     };
 
-    let (root, names, errors, extra_info) = match backend {
-        "glr" => {
+    if resolved_backend == ParserBackend::Glr {
+        eprintln!("Backend: glr (auto-selected={})", backend == "auto");
+    } else {
+        eprintln!("Backend: rd (auto-selected={})", backend == "auto");
+    }
+
+    let (root, names, errors, extra_info) = match resolved_backend {
+        ParserBackend::Glr => {
             let parser = GlrParser::new(grammar);
             eprintln!(
                 "GLR parser: {} states, conflicts: {}",
@@ -87,26 +52,33 @@ pub fn run(
             };
             (result.syntax(), result.kind_names, result.errors, extra)
         }
-        _ => {
+        ParserBackend::RecursiveDescent | ParserBackend::Auto => {
             if incremental || edit.is_some() {
-                let mut inc = IncrementalParser::new(grammar);
-                let result = if let Some(spec) = edit {
+                let mut session = ParseSession::new(grammar, ParserBackend::RecursiveDescent);
+                let unified = if let Some(spec) = edit {
                     let (start, end, text) = parse_edit_spec(spec)?;
                     let edits = vec![EditRegion::new(start, end, text)];
-                    let new_source = apply_edits(&source, &edits);
                     eprintln!(
                         "incremental reparse: edit [{start}..{end}) -> {:?}",
                         edits[0].new_text
                     );
-                    let _ = inc.parse(&source);
-                    inc.update(&new_source, &edits)
+                    session.parse(&source);
+                    session.apply_edits(&edits)
                 } else {
-                    inc.parse(&source)
+                    session.parse(&source)
                 };
+                let rd_errors = unified
+                    .errors
+                    .into_iter()
+                    .map(|msg| semtree_runtime::RuntimeParseError {
+                        message: msg,
+                        range: text_size::TextRange::empty(text_size::TextSize::new(0)),
+                    })
+                    .collect();
                 (
-                    result.syntax(),
-                    result.kind_names,
-                    result.errors,
+                    unified.syntax,
+                    unified.kind_names,
+                    rd_errors,
                     if incremental {
                         " (incremental parser)".into()
                     } else {

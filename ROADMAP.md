@@ -2,7 +2,7 @@
 
 > Universal Incremental Language Infrastructure — the platform that beats Tree-sitter.
 
-**Current status:** 19 crates, 228 tests passing, Phases 1–11 complete.
+**Current status:** 19 crates, 245+ tests passing, Phases 1–11 complete.
 
 ---
 
@@ -50,7 +50,7 @@
 
 ### 4.2 — GLR / Ambiguity Support
 - [x] GLR parser backend for ambiguous grammars
-- [ ] Parser algorithm selection — auto-choose recursive descent, Pratt, or GLR per rule (future)
+- [x] Parser algorithm selection — auto-choose recursive descent or GLR per grammar (`--backend auto`)
 - [x] Precedence/associativity fully wired through Grammar IR to runtime parser
 - [x] Left recursion detection with depth guard (direct left-recursive parsing TBD)
 - [x] Proper Kleene-star (Repeat) in GLR table generation via synthesized non-terminals
@@ -89,6 +89,7 @@
 - [x] TOML grammar with lossless parse tests
 - [x] Grammar test files (grammars/tests/)
 - [x] Python grammar with INDENT/DEDENT tokenization
+- [x] Python grammar: async/await, decorators, with, try/except, f-strings
 - [x] Corpus tests: JSON, TOML, Python, Rust, JavaScript, CSS against real files
 - [ ] Full Rust grammar (future — pass on rust-analyzer test corpus)
 - [ ] Full JavaScript/TypeScript grammar (future)
@@ -161,6 +162,7 @@
 ### 10.1 — C FFI API
 - [x] `semtree_ffi` crate (cdylib + staticlib)
 - [x] `semtree_parse()` — parse source to tree
+- [x] `semtree_session_create/parse/edit/free()` — incremental grammar-driven sessions
 - [x] `semtree_tree_root()` — get root node
 - [x] `semtree_node_kind/text/child_count/child/start/end()` — node navigation
 - [x] `semtree_tree_free()` / `semtree_node_free()` — memory management
@@ -173,6 +175,9 @@
 - [x] `semtree generate` — generate typed AST code from grammar
 - [x] `semtree test` — run grammar test suites
 - [x] `semtree migrate` — migrate Tree-sitter grammars
+- [x] `semtree lsp` — LSP server with incremental parsing
+- [x] `semtree debug` — grammar debugger (token stream + tree summary)
+- [x] `semtree parity` — full vs incremental parse benchmark
 - [ ] `semtree playground` — web-based grammar explorer (future)
 - [ ] `semtree profile` — performance profiling (future)
 
@@ -232,8 +237,8 @@
 - [x] Error node generation — wrap unrecoverable regions in ERROR nodes
 
 ### 11.7 — Integration & Algorithm Selection
-- [x] `ParserBackend` enum: `RecursiveDescent | GLR`
-- [ ] Auto-selection: use GLR when grammar has conflicts, RD otherwise (future)
+- [x] `ParserBackend` enum: `RecursiveDescent | GLR | Auto`
+- [x] Auto-selection: use GLR when grammar has conflicts, RD otherwise
 - [x] CLI `--backend glr` flag for explicit selection
 - [x] Unified parse result output regardless of backend
 - [ ] Performance benchmarks: GLR vs RD vs Tree-sitter (future)

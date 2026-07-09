@@ -6,9 +6,12 @@ M.config = {
     highlight = true,
     indent = false,
     lint_on_save = false,
+    live_parse = true,
+    debounce_ms = 200,
 }
 
 local inspector = require("semtree.inspector")
+local live = require("semtree.live")
 
 function M.setup(opts)
     M.config = vim.tbl_deep_extend("force", M.config, opts or {})
@@ -45,6 +48,13 @@ function M.setup(opts)
     vim.api.nvim_create_user_command("SemTreeFormat", function()
         M.format_buffer()
     end, {})
+
+    vim.api.nvim_create_user_command("SemTreeLsp", function()
+        live.ensure_lsp(0)
+        vim.notify("SemTree LSP started", vim.log.levels.INFO)
+    end, {})
+
+    live.setup(M.config)
 
     if M.config.lint_on_save then
         vim.api.nvim_create_autocmd("BufWritePost", {

@@ -60,6 +60,15 @@ fn corpus_python_demo() {
 }
 
 #[test]
+fn corpus_python_features() {
+    let errors = parse_file("python", "grammars/tests/python_features.py");
+    assert!(
+        errors <= 10,
+        "Python features should have at most 10 errors (got {errors})"
+    );
+}
+
+#[test]
 fn corpus_rust_demo() {
     let _errors = parse_file("rust", "examples/demo.rs");
 }
