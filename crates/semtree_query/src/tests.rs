@@ -85,10 +85,7 @@ fn pattern_query_by_kind_name() {
 fn parse_sexp_query() {
     let query = parse_query("(Function @func)").unwrap();
     assert_eq!(query.nodes.len(), 1);
-    assert_eq!(
-        query.nodes[0].kind_name.as_deref(),
-        Some("Function")
-    );
+    assert_eq!(query.nodes[0].kind_name.as_deref(), Some("Function"));
     assert_eq!(query.nodes[0].capture.as_deref(), Some("func"));
 }
 

@@ -191,19 +191,13 @@ pub fn execute_command(
             serde_json::to_value(results).unwrap_or(serde_json::Value::Null)
         }
         "nearest_scope" => {
-            let offset = args
-                .and_then(|a| a.get("offset")?.as_u64())
-                .unwrap_or(0) as u32;
-            let result: Option<ScopeInfo> =
-                api::nearest_scope(root, model, offset).map(Into::into);
+            let offset = args.and_then(|a| a.get("offset")?.as_u64()).unwrap_or(0) as u32;
+            let result: Option<ScopeInfo> = api::nearest_scope(root, model, offset).map(Into::into);
             serde_json::to_value(result).unwrap_or(serde_json::Value::Null)
         }
         "current_function" => {
-            let offset = args
-                .and_then(|a| a.get("offset")?.as_u64())
-                .unwrap_or(0) as u32;
-            let result: Option<FunctionInfo> =
-                api::current_function(root, offset).map(Into::into);
+            let offset = args.and_then(|a| a.get("offset")?.as_u64()).unwrap_or(0) as u32;
+            let result: Option<FunctionInfo> = api::current_function(root, offset).map(Into::into);
             serde_json::to_value(result).unwrap_or(serde_json::Value::Null)
         }
         "affected_nodes" => {
@@ -223,14 +217,11 @@ pub fn execute_command(
             serde_json::to_value(results).unwrap_or(serde_json::Value::Null)
         }
         "suggest_completion" => {
-            let offset = args
-                .and_then(|a| a.get("offset")?.as_u64())
-                .unwrap_or(0) as u32;
-            let results: Vec<CompletionSuggestion> =
-                api::suggest_completion(root, model, offset)
-                    .into_iter()
-                    .map(Into::into)
-                    .collect();
+            let offset = args.and_then(|a| a.get("offset")?.as_u64()).unwrap_or(0) as u32;
+            let results: Vec<CompletionSuggestion> = api::suggest_completion(root, model, offset)
+                .into_iter()
+                .map(Into::into)
+                .collect();
             serde_json::to_value(results).unwrap_or(serde_json::Value::Null)
         }
         _ => serde_json::json!({ "error": format!("unknown command: {}", cmd) }),

@@ -1,11 +1,11 @@
-pub mod rename;
 pub mod extract;
 pub mod inline;
+pub mod rename;
 pub mod tree_edit;
 
-pub use rename::{rename_symbol, TextEdit};
-pub use extract::{extract_variable, Extraction};
+pub use extract::{Extraction, extract_variable};
 pub use inline::inline_variable;
+pub use rename::{TextEdit, rename_symbol};
 pub use tree_edit::TreeEditor;
 
 #[cfg(test)]

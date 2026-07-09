@@ -4,8 +4,7 @@ use semtree_grammar::{parse_semtree_dsl, validate::validate_grammar};
 
 pub fn check(file: PathBuf) -> super::Result {
     let source = std::fs::read_to_string(&file)?;
-    let grammar = parse_semtree_dsl(&source)
-        .map_err(|e| format!("grammar parse error: {e}"))?;
+    let grammar = parse_semtree_dsl(&source).map_err(|e| format!("grammar parse error: {e}"))?;
 
     println!("Grammar: {}", grammar.name);
     println!("  Rules: {}", grammar.rules.len());

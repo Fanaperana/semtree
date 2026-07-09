@@ -1,7 +1,7 @@
 use text_size::{TextRange, TextSize};
 
 use crate::glr::gss::{Gss, GssNodeId};
-use crate::glr::sppf::{Sppf, SppfNodeId};
+use crate::glr::sppf::Sppf;
 use crate::glr::table::{Action, ParseTable, Symbol};
 use crate::runtime_lexer::{RawToken, RuntimeTokenKind};
 use crate::runtime_parser::RuntimeParseError;
@@ -67,12 +67,8 @@ impl GlrErrorRecovery {
                 RuntimeTokenKind::StringLit => SyntaxKind::STRING_LIT,
                 _ => SyntaxKind::IDENT,
             };
-            let sppf_node = sppf.create_terminal(
-                terminal,
-                tok.text.clone(),
-                tok.range,
-                syntax_kind,
-            );
+            let sppf_node =
+                sppf.create_terminal(terminal, tok.text.clone(), tok.range, syntax_kind);
             skipped_sppf_children.push(sppf_node);
             skip_idx += 1;
 
@@ -91,7 +87,10 @@ impl GlrErrorRecovery {
             let range = if token_idx < tokens.len() {
                 tokens[token_idx].range
             } else {
-                let end = tokens.last().map(|t| t.range.end()).unwrap_or(TextSize::new(0));
+                let end = tokens
+                    .last()
+                    .map(|t| t.range.end())
+                    .unwrap_or(TextSize::new(0));
                 TextRange::new(end, end)
             };
 
@@ -108,9 +107,7 @@ impl GlrErrorRecovery {
         // Create error SPPF node wrapping skipped tokens.
         let error_range = TextRange::new(
             tokens[start_idx].range.start(),
-            tokens[skip_idx.saturating_sub(1)]
-                .range
-                .end(),
+            tokens[skip_idx.saturating_sub(1)].range.end(),
         );
         let _error_node = sppf.create_error(
             skipped_sppf_children,
@@ -127,10 +124,7 @@ impl GlrErrorRecovery {
             vec![new_node],
             skip_idx,
             RuntimeParseError {
-                message: format!(
-                    "skipped {} unexpected token(s)",
-                    skip_idx - start_idx
-                ),
+                message: format!("skipped {} unexpected token(s)", skip_idx - start_idx),
                 range: error_range,
             },
         ))

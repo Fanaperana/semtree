@@ -1,5 +1,5 @@
-use semtree_core::SyntaxKind;
 use crate::Parser;
+use semtree_core::SyntaxKind;
 
 #[test]
 fn parse_empty_function() {
@@ -89,5 +89,8 @@ fn roundtrip_text() {
     let source = "fn main() { let x = 1 + 2; }";
     let result = Parser::parse(source);
     let root = result.syntax();
-    assert_eq!(root.text().replace(" ", "").len(), source.replace(" ", "").len());
+    assert_eq!(
+        root.text().replace(" ", "").len(),
+        source.replace(" ", "").len()
+    );
 }

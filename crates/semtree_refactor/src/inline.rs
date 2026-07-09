@@ -1,5 +1,5 @@
 use semtree_core::SyntaxKind;
-use semtree_red::{SyntaxNode, SyntaxElement};
+use semtree_red::{SyntaxElement, SyntaxNode};
 use semtree_semantic::SemanticModel;
 use text_size::TextSize;
 
@@ -67,10 +67,10 @@ fn find_initializer(root: &SyntaxNode, let_range: text_size::TextRange) -> Optio
                             init_parts.push(text);
                         }
                     }
-                } else if let SyntaxElement::Token(t) = &elem {
-                    if t.kind() == SyntaxKind::EQ {
-                        found_eq = true;
-                    }
+                } else if let SyntaxElement::Token(t) = &elem
+                    && t.kind() == SyntaxKind::EQ
+                {
+                    found_eq = true;
                 }
             }
             let init = init_parts.join("").trim().to_string();

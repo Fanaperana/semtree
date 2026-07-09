@@ -1,11 +1,11 @@
-pub mod ir;
 pub mod dsl;
 pub mod format_dsl;
-pub mod validate;
+pub mod ir;
 pub mod optimize;
+pub mod validate;
 
-pub use ir::{Grammar, Rule, RuleExpr, FieldDef, GrammarError, TokenDef};
 pub use dsl::parse_semtree_dsl;
 pub use format_dsl::format_semtree_dsl;
-pub use validate::validate_grammar;
+pub use ir::{FieldDef, Grammar, GrammarError, Rule, RuleExpr, TokenDef};
 pub use optimize::optimize;
+pub use validate::validate_grammar;

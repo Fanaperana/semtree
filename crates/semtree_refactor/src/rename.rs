@@ -54,12 +54,11 @@ pub fn rename_symbol(
 
 fn find_ident_in_node(root: &SyntaxNode, node_range: TextRange, name: &str) -> Option<TextRange> {
     for desc in root.descendants() {
-        if desc.text_range() == node_range {
-            if let Some(tok) = desc.child_token(SyntaxKind::IDENT) {
-                if tok.text() == name {
-                    return Some(tok.text_range());
-                }
-            }
+        if desc.text_range() == node_range
+            && let Some(tok) = desc.child_token(SyntaxKind::IDENT)
+            && tok.text() == name
+        {
+            return Some(tok.text_range());
         }
     }
     None

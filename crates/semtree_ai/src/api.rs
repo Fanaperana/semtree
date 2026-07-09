@@ -102,8 +102,7 @@ pub fn rename_symbol(
         if i + old_chars.len() <= chars.len()
             && &chars[i..i + old_chars.len()] == old_chars.as_slice()
         {
-            let before_ok =
-                i == 0 || !(chars[i - 1].is_alphanumeric() || chars[i - 1] == '_');
+            let before_ok = i == 0 || !(chars[i - 1].is_alphanumeric() || chars[i - 1] == '_');
             let after_idx = i + old_chars.len();
             let after_ok = after_idx >= chars.len()
                 || !(chars[after_idx].is_alphanumeric() || chars[after_idx] == '_');
@@ -120,11 +119,7 @@ pub fn rename_symbol(
 }
 
 /// Find all references to a symbol by name.
-pub fn find_references(
-    root: &SyntaxNode,
-    model: &SemanticModel,
-    name: &str,
-) -> Vec<ReferenceInfo> {
+pub fn find_references(root: &SyntaxNode, model: &SemanticModel, name: &str) -> Vec<ReferenceInfo> {
     let _ = root;
     let symbols = model.symbols.find_by_name(name);
     let symbol_name = symbols
@@ -144,36 +139,28 @@ pub fn find_references(
 }
 
 /// Get the scope context at the given byte offset.
-pub fn nearest_scope(
-    root: &SyntaxNode,
-    model: &SemanticModel,
-    offset: u32,
-) -> Option<ScopeInfo> {
+pub fn nearest_scope(root: &SyntaxNode, model: &SemanticModel, offset: u32) -> Option<ScopeInfo> {
     let _ = root;
     let offset_ts = TextSize::from(offset);
     let mut best: Option<(usize, TextRange)> = None;
 
     for scope_id in 0..model.scopes.len() {
-        if let Some(scope) = model.scopes.get(scope_id) {
-            if scope.range.contains(offset_ts) {
-                let is_tighter = best
-                    .as_ref()
-                    .map(|(_, r)| scope.range.len() < r.len())
-                    .unwrap_or(true);
-                if is_tighter {
-                    best = Some((scope_id, scope.range));
-                }
+        if let Some(scope) = model.scopes.get(scope_id)
+            && scope.range.contains(offset_ts)
+        {
+            let is_tighter = best
+                .as_ref()
+                .map(|(_, r)| scope.range.len() < r.len())
+                .unwrap_or(true);
+            if is_tighter {
+                best = Some((scope_id, scope.range));
             }
         }
     }
 
     best.and_then(|(scope_id, _)| {
         let scope = model.scopes.get(scope_id)?;
-        let symbols: Vec<String> = scope
-            .bindings
-            .keys()
-            .map(|k| k.to_string())
-            .collect();
+        let symbols: Vec<String> = scope.bindings.keys().map(|k| k.to_string()).collect();
         Some(ScopeInfo {
             scope_id,
             parent_scope: scope.parent,
@@ -265,8 +252,7 @@ fn diff_nodes(old: &SyntaxNode, new: &SyntaxNode, diffs: &mut Vec<TreeDiff>) {
     for i in 0..max_len {
         match (old_children.get(i), new_children.get(i)) {
             (Some(old_elem), Some(new_elem)) => {
-                if old_elem.kind() != new_elem.kind()
-                    || elem_text(old_elem) != elem_text(new_elem)
+                if old_elem.kind() != new_elem.kind() || elem_text(old_elem) != elem_text(new_elem)
                 {
                     match (old_elem, new_elem) {
                         (SyntaxElement::Node(on), SyntaxElement::Node(nn))
@@ -343,4 +329,3 @@ pub fn suggest_completion(
         })
         .collect()
 }
-

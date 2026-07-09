@@ -45,10 +45,9 @@ impl std::fmt::Display for RuntimeParseError {
 
 /// Recovery tokens that typically start new statements or close blocks.
 const RECOVERY_TOKENS: &[&str] = &[
-    ";", "}", ")", "]",
-    "fn", "let", "if", "while", "for", "return", "struct", "enum", "impl", "trait", "use", "mod", "pub",
-    "def", "class", "elif", "else", "import", "from", "try", "except", "finally", "raise",
-    "with", "pass", "break", "continue", "assert", "yield", "async",
+    ";", "}", ")", "]", "fn", "let", "if", "while", "for", "return", "struct", "enum", "impl",
+    "trait", "use", "mod", "pub", "def", "class", "elif", "else", "import", "from", "try",
+    "except", "finally", "raise", "with", "pass", "break", "continue", "assert", "yield", "async",
 ];
 
 /// A grammar-driven parser. Given a Grammar IR and source text, it produces
@@ -155,6 +154,7 @@ impl<'a> ParseContext<'a> {
         self.pos >= self.tokens.len() || self.tokens[self.pos].kind == RuntimeTokenKind::Eof
     }
 
+    #[allow(dead_code)]
     fn current_text(&self) -> &str {
         if self.pos < self.tokens.len() {
             self.tokens[self.pos].text.as_str()
@@ -180,6 +180,7 @@ impl<'a> ParseContext<'a> {
         }
     }
 
+    #[allow(dead_code)]
     fn peek_kind(&self) -> RuntimeTokenKind {
         let i = self.skip_trivia_pos();
         if i < self.tokens.len() {
@@ -395,19 +396,19 @@ impl<'a> ParseContext<'a> {
 
     fn parse_prec_left(&mut self, _prec: i32, inner: &RuleExpr) -> bool {
         // For PrecLeft(p, Seq([lhs, op, rhs])), parse left-associatively.
-        if let RuleExpr::Seq(parts) = inner {
-            if parts.len() == 3 {
-                return self.parse_binary_left(parts);
-            }
+        if let RuleExpr::Seq(parts) = inner
+            && parts.len() == 3
+        {
+            return self.parse_binary_left(parts);
         }
         self.parse_expr(inner)
     }
 
     fn parse_prec_right(&mut self, _prec: i32, inner: &RuleExpr) -> bool {
-        if let RuleExpr::Seq(parts) = inner {
-            if parts.len() == 3 {
-                return self.parse_binary_right(parts);
-            }
+        if let RuleExpr::Seq(parts) = inner
+            && parts.len() == 3
+        {
+            return self.parse_binary_right(parts);
         }
         self.parse_expr(inner)
     }
@@ -450,9 +451,7 @@ impl<'a> ParseContext<'a> {
 
     fn parse_literal(&mut self, expected: &str) -> bool {
         let peek_pos = self.skip_trivia_pos();
-        if peek_pos >= self.tokens.len()
-            || self.tokens[peek_pos].kind == RuntimeTokenKind::Eof
-        {
+        if peek_pos >= self.tokens.len() || self.tokens[peek_pos].kind == RuntimeTokenKind::Eof {
             return false;
         }
         if self.tokens[peek_pos].text.as_str() == expected {
@@ -654,6 +653,7 @@ impl<'a> ParseContext<'a> {
         }
     }
 
+    #[allow(dead_code)]
     fn describe_expr(&self, expr: &RuleExpr) -> String {
         match expr {
             RuleExpr::Literal(s) => format!("'{s}'"),

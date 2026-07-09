@@ -78,7 +78,7 @@ impl RuntimeLexer {
         Self::collect_literals_from_grammar(grammar, &mut literal_set, &mut literal_counter);
 
         let mut literals: Vec<_> = literal_set.into_iter().collect();
-        literals.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+        literals.sort_by_key(|a| std::cmp::Reverse(a.0.len()));
 
         let mut custom_tokens = Vec::new();
         let mut token_names = Vec::new();
@@ -125,17 +125,17 @@ impl RuntimeLexer {
         let mut extras = Vec::new();
         for extra in &grammar.extras {
             let pattern = extra.as_str();
-            if let (Some(p), Some(_)) = (pattern.strip_prefix('/'), pattern.strip_suffix('/')) {
-                if let Ok(re) = Regex::new(p) {
-                    let kind = if p.contains('\n') || p == r"\s+" || p == r"[ \t]+" {
-                        RuntimeTokenKind::Whitespace
-                    } else if p.contains("//") || p.contains('#') {
-                        RuntimeTokenKind::LineComment
-                    } else {
-                        RuntimeTokenKind::Whitespace
-                    };
-                    extras.push(CompiledExtra { regex: re, kind });
-                }
+            if let (Some(p), Some(_)) = (pattern.strip_prefix('/'), pattern.strip_suffix('/'))
+                && let Ok(re) = Regex::new(p)
+            {
+                let kind = if p.contains('\n') || p == r"\s+" || p == r"[ \t]+" {
+                    RuntimeTokenKind::Whitespace
+                } else if p.contains("//") || p.contains('#') {
+                    RuntimeTokenKind::LineComment
+                } else {
+                    RuntimeTokenKind::Whitespace
+                };
+                extras.push(CompiledExtra { regex: re, kind });
             }
         }
         extras
@@ -269,7 +269,11 @@ impl RuntimeLexer {
                         depth -= 1;
                         pos += 2;
                     } else {
-                        pos += source[pos..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+                        pos += source[pos..]
+                            .chars()
+                            .next()
+                            .map(|c| c.len_utf8())
+                            .unwrap_or(1);
                     }
                 }
                 tokens.push(RawToken {
@@ -317,8 +321,7 @@ impl RuntimeLexer {
                     && bytes[pos + 1].is_ascii_digit()
                 {
                     pos += 1;
-                    while pos < source.len()
-                        && (bytes[pos].is_ascii_digit() || bytes[pos] == b'_')
+                    while pos < source.len() && (bytes[pos].is_ascii_digit() || bytes[pos] == b'_')
                     {
                         pos += 1;
                     }
@@ -406,16 +409,16 @@ impl RuntimeLexer {
         cursor: &mut usize,
     ) -> bool {
         for extra in &self.extra_patterns {
-            if let Some(m) = extra.regex.find_at(source, pos) {
-                if m.start() == pos {
-                    *cursor = m.end();
-                    tokens.push(RawToken {
-                        kind: extra.kind,
-                        text: source[m.start()..m.end()].into(),
-                        range: Self::make_range(m.start(), m.end()),
-                    });
-                    return true;
-                }
+            if let Some(m) = extra.regex.find_at(source, pos)
+                && m.start() == pos
+            {
+                *cursor = m.end();
+                tokens.push(RawToken {
+                    kind: extra.kind,
+                    text: source[m.start()..m.end()].into(),
+                    range: Self::make_range(m.start(), m.end()),
+                });
+                return true;
             }
         }
         false
@@ -439,18 +442,17 @@ impl RuntimeLexer {
                     });
                     return true;
                 }
-            } else if let Some(re) = &ct.regex {
-                if let Some(m) = re.find_at(source, pos) {
-                    if m.start() == pos {
-                        *cursor = m.end();
-                        tokens.push(RawToken {
-                            kind: RuntimeTokenKind::Custom(ct.id),
-                            text: source[m.start()..m.end()].into(),
-                            range: Self::make_range(m.start(), m.end()),
-                        });
-                        return true;
-                    }
-                }
+            } else if let Some(re) = &ct.regex
+                && let Some(m) = re.find_at(source, pos)
+                && m.start() == pos
+            {
+                *cursor = m.end();
+                tokens.push(RawToken {
+                    kind: RuntimeTokenKind::Custom(ct.id),
+                    text: source[m.start()..m.end()].into(),
+                    range: Self::make_range(m.start(), m.end()),
+                });
+                return true;
             }
         }
         false
@@ -550,7 +552,10 @@ Rule := Arrow
         .unwrap();
         let lexer = RuntimeLexer::new(&g);
         let toks = lexer.tokenize("->");
-        assert!(toks.iter().any(|t| matches!(t.kind, RuntimeTokenKind::Custom(0))));
+        assert!(
+            toks.iter()
+                .any(|t| matches!(t.kind, RuntimeTokenKind::Custom(0)))
+        );
     }
 
     #[test]

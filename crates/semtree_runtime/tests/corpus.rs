@@ -21,11 +21,7 @@ fn parse_file(grammar_name: &str, rel_path: &str) -> usize {
     let parser = RuntimeParser::new(grammar);
     let result = parser.parse(&source);
     let root = result.syntax();
-    assert!(
-        !root.text().is_empty(),
-        "empty tree for {}",
-        path.display()
-    );
+    assert!(!root.text().is_empty(), "empty tree for {}", path.display());
     result.errors.len()
 }
 

@@ -28,11 +28,7 @@ pub struct Breadcrumb {
 }
 
 /// Navigate to the definition of the symbol at the given offset.
-pub fn goto_definition(
-    root: &SyntaxNode,
-    model: &SemanticModel,
-    offset: u32,
-) -> Option<TextRange> {
+pub fn goto_definition(root: &SyntaxNode, model: &SemanticModel, offset: u32) -> Option<TextRange> {
     let offset = TextSize::new(offset);
     let tok = root.token_at_offset(offset)?;
     if tok.kind() != SyntaxKind::IDENT {
@@ -44,11 +40,7 @@ pub fn goto_definition(
 }
 
 /// Find all references to the symbol at the given offset.
-pub fn find_references(
-    root: &SyntaxNode,
-    model: &SemanticModel,
-    offset: u32,
-) -> Vec<TextRange> {
+pub fn find_references(root: &SyntaxNode, model: &SemanticModel, offset: u32) -> Vec<TextRange> {
     let offset = TextSize::new(offset);
     let tok = match root.token_at_offset(offset) {
         Some(t) => t,
@@ -77,10 +69,7 @@ pub fn find_references(
 }
 
 /// Get an outline of all symbols in the document.
-pub fn document_symbols(
-    _root: &SyntaxNode,
-    model: &SemanticModel,
-) -> Vec<DocumentSymbol> {
+pub fn document_symbols(_root: &SyntaxNode, model: &SemanticModel) -> Vec<DocumentSymbol> {
     model
         .symbols
         .all()
@@ -95,11 +84,7 @@ pub fn document_symbols(
 }
 
 /// Get hover info for the symbol at the given offset.
-pub fn hover_info(
-    root: &SyntaxNode,
-    model: &SemanticModel,
-    offset: u32,
-) -> Option<HoverInfo> {
+pub fn hover_info(root: &SyntaxNode, model: &SemanticModel, offset: u32) -> Option<HoverInfo> {
     let offset = TextSize::new(offset);
     let tok = root.token_at_offset(offset)?;
     if tok.kind() != SyntaxKind::IDENT {
@@ -130,14 +115,14 @@ fn collect_breadcrumbs(node: &SyntaxNode, offset: TextSize, out: &mut Vec<Breadc
     }
 
     let kind = node.kind();
-    if is_named_scope(kind) {
-        if let Some(name_tok) = node.child_token(SyntaxKind::IDENT) {
-            out.push(Breadcrumb {
-                name: name_tok.text().into(),
-                kind,
-                range: node.text_range(),
-            });
-        }
+    if is_named_scope(kind)
+        && let Some(name_tok) = node.child_token(SyntaxKind::IDENT)
+    {
+        out.push(Breadcrumb {
+            name: name_tok.text().into(),
+            kind,
+            range: node.text_range(),
+        });
     }
 
     for child in node.children() {

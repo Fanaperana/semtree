@@ -53,6 +53,12 @@ pub struct Sppf {
     nodes: Vec<SppfNodeKind>,
 }
 
+impl Default for Sppf {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Sppf {
     pub fn new() -> Self {
         Self {
@@ -92,11 +98,7 @@ impl Sppf {
         id
     }
 
-    pub fn create_packed(
-        &mut self,
-        production_id: usize,
-        children: Vec<SppfNodeId>,
-    ) -> SppfNodeId {
+    pub fn create_packed(&mut self, production_id: usize, children: Vec<SppfNodeId>) -> SppfNodeId {
         let id = SppfNodeId(self.nodes.len() as u32);
         self.nodes.push(SppfNodeKind::Packed {
             production_id,
@@ -151,9 +153,7 @@ impl Sppf {
             } => {
                 builder.token(*syntax_kind, text.as_str());
             }
-            SppfNodeKind::Symbol {
-                name, children, ..
-            } => {
+            SppfNodeKind::Symbol { name, children, .. } => {
                 let kind = rule_name_to_kind(name);
                 builder.start_node(kind);
                 for &child in children {
@@ -167,7 +167,9 @@ impl Sppf {
                 }
             }
             SppfNodeKind::Error {
-                children, message, ..
+                children,
+                message: _,
+                ..
             } => {
                 builder.start_node(SyntaxKind::ERROR);
                 for &child in children {

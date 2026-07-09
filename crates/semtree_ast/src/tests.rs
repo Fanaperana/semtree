@@ -2,8 +2,8 @@ use semtree_parser::Parser;
 use semtree_red::SyntaxNode;
 
 use crate::builtins::*;
-use crate::typed::AstNode;
 use crate::codegen::generate_ast;
+use crate::typed::AstNode;
 
 fn parse(source: &str) -> SyntaxNode {
     Parser::parse(source).syntax()
@@ -54,9 +54,7 @@ fn let_statement_details() {
 fn multiple_functions() {
     let root = parse("fn foo() {} fn bar() {} fn baz() {}");
     let sf = SourceFile::cast(root).unwrap();
-    let names: Vec<_> = sf.functions()
-        .filter_map(|f| f.name_text())
-        .collect();
+    let names: Vec<_> = sf.functions().filter_map(|f| f.name_text()).collect();
     assert_eq!(names, vec!["foo", "bar", "baz"]);
 }
 
@@ -97,7 +95,9 @@ fn if_expression() {
     let body = func.body().unwrap();
     // The if expression is present in the tree.
     let descendants = body.syntax().descendants();
-    let has_if = descendants.iter().any(|n| n.kind() == semtree_core::SyntaxKind::IF_EXPR);
+    let has_if = descendants
+        .iter()
+        .any(|n| n.kind() == semtree_core::SyntaxKind::IF_EXPR);
     assert!(has_if);
 }
 

@@ -181,18 +181,10 @@ fn format_rule(lines: &[&str], start: usize, out: &mut String) -> usize {
 
     if alternatives.len() == 1 {
         let alt = alternatives[0].trim();
-        // Short single-line body stays on one indented line
-        if alt.len() <= 72 && !alt.contains('|') {
-            out.push('\n');
-            out.push_str("    ");
-            out.push_str(alt);
-            out.push('\n');
-        } else {
-            out.push('\n');
-            out.push_str("    ");
-            out.push_str(alt);
-            out.push('\n');
-        }
+        out.push('\n');
+        out.push_str("    ");
+        out.push_str(alt);
+        out.push('\n');
     } else {
         // Multi-alternative: first on its own line, rest as "| ..."
         out.push('\n');

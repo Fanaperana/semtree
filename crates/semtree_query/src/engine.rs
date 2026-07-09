@@ -1,6 +1,5 @@
 use semtree_core::SyntaxKind;
-use semtree_red::{SyntaxNode, SyntaxElement};
-
+use semtree_red::{SyntaxElement, SyntaxNode};
 
 use crate::captures::{QueryCapture, QueryMatch};
 use crate::pattern::{PatternNode, QueryPattern};
@@ -63,11 +62,7 @@ impl QueryEngine {
 
     // ── Internal matching ────────────────────────────────────
 
-    fn find_matches(
-        node: &SyntaxNode,
-        pattern: &PatternNode,
-        matches: &mut Vec<QueryMatch>,
-    ) {
+    fn find_matches(node: &SyntaxNode, pattern: &PatternNode, matches: &mut Vec<QueryMatch>) {
         // Try matching this node against the pattern.
         let mut captures = Vec::new();
         if Self::matches_node(node, pattern, &mut captures) {
@@ -89,17 +84,17 @@ impl QueryEngine {
         captures: &mut Vec<QueryCapture>,
     ) -> bool {
         // Check kind match.
-        if let Some(kind) = pattern.kind {
-            if node.kind() != kind {
-                return false;
-            }
+        if let Some(kind) = pattern.kind
+            && node.kind() != kind
+        {
+            return false;
         }
 
         // Check kind name match (runtime grammar rules use hashed kinds).
-        if let Some(ref kind_name) = pattern.kind_name {
-            if !Self::kind_name_matches(node, kind_name) {
-                return false;
-            }
+        if let Some(ref kind_name) = pattern.kind_name
+            && !Self::kind_name_matches(node, kind_name)
+        {
+            return false;
         }
 
         // Check text match.

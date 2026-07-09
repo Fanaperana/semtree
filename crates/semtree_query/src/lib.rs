@@ -1,10 +1,10 @@
-pub mod pattern;
-pub mod engine;
 pub mod captures;
+pub mod engine;
+pub mod pattern;
 
-pub use pattern::{QueryPattern, PatternNode, PatternPredicate};
+pub use captures::{QueryCapture, QueryMatch};
 pub use engine::QueryEngine;
-pub use captures::{QueryMatch, QueryCapture};
+pub use pattern::{PatternNode, PatternPredicate, QueryPattern};
 
 #[cfg(test)]
 mod tests;

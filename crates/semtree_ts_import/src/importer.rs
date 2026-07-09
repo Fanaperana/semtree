@@ -90,21 +90,13 @@ fn convert_rule_expr(value: &Value) -> Result<RuleExpr, TsImportError> {
         "BLANK" => Ok(RuleExpr::Blank),
 
         "STRING" => {
-            let s = value
-                .get("value")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let s = value.get("value").and_then(|v| v.as_str()).unwrap_or("");
             Ok(RuleExpr::Literal(s.into()))
         }
 
         "PATTERN" => {
-            let pattern = value
-                .get("value")
-                .and_then(|v| v.as_str())
-                .unwrap_or(".*");
-            Ok(RuleExpr::Token(Box::new(RuleExpr::Literal(
-                pattern.into(),
-            ))))
+            let pattern = value.get("value").and_then(|v| v.as_str()).unwrap_or(".*");
+            Ok(RuleExpr::Token(Box::new(RuleExpr::Literal(pattern.into()))))
         }
 
         "SYMBOL" => {

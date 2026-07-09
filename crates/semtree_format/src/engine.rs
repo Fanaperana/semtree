@@ -1,5 +1,5 @@
 use semtree_core::SyntaxKind;
-use semtree_red::{SyntaxNode, SyntaxToken, SyntaxElement};
+use semtree_red::{SyntaxElement, SyntaxNode, SyntaxToken};
 
 use crate::config::FormatConfig;
 
@@ -114,7 +114,9 @@ impl<'a> FormatContext<'a> {
     }
 
     fn format_param_list(&mut self, node: &SyntaxNode) {
-        let tokens: Vec<_> = node.children_with_tokens().into_iter()
+        let tokens: Vec<_> = node
+            .children_with_tokens()
+            .into_iter()
             .filter(|e| !e.kind().is_trivia())
             .collect();
 
@@ -171,7 +173,9 @@ impl<'a> FormatContext<'a> {
 
     fn format_simple_statement(&mut self, node: &SyntaxNode) {
         self.write_indent();
-        let elements: Vec<_> = node.children_with_tokens().into_iter()
+        let elements: Vec<_> = node
+            .children_with_tokens()
+            .into_iter()
             .filter(|e| !e.kind().is_trivia())
             .collect();
 
@@ -322,16 +326,13 @@ impl<'a> FormatContext<'a> {
             && kind != SyntaxKind::RBRACKET
             && kind != SyntaxKind::DOT
             && kind != SyntaxKind::COLON
+            && let Some(last) = self.last_kind
+            && last != SyntaxKind::LPAREN
+            && last != SyntaxKind::LBRACE
+            && last != SyntaxKind::LBRACKET
+            && last != SyntaxKind::DOT
         {
-            if let Some(last) = self.last_kind {
-                if last != SyntaxKind::LPAREN
-                    && last != SyntaxKind::LBRACE
-                    && last != SyntaxKind::LBRACKET
-                    && last != SyntaxKind::DOT
-                {
-                    self.space();
-                }
-            }
+            self.space();
         }
     }
 

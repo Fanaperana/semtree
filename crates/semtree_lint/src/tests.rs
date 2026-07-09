@@ -15,7 +15,9 @@ fn empty_function_warning() {
     let engine = LintEngine::with_defaults();
     let result = engine.lint_syntax(&root);
 
-    let empty_fn: Vec<_> = result.diagnostics.iter()
+    let empty_fn: Vec<_> = result
+        .diagnostics
+        .iter()
         .filter(|d| d.rule == "empty-function")
         .collect();
     assert_eq!(empty_fn.len(), 1);
@@ -28,7 +30,9 @@ fn non_empty_function_no_warning() {
     let engine = LintEngine::with_defaults();
     let result = engine.lint_syntax(&root);
 
-    let empty_fn: Vec<_> = result.diagnostics.iter()
+    let empty_fn: Vec<_> = result
+        .diagnostics
+        .iter()
         .filter(|d| d.rule == "empty-function")
         .collect();
     assert_eq!(empty_fn.len(), 0);
@@ -41,7 +45,9 @@ fn naming_convention_warning() {
     let engine = LintEngine::with_defaults();
     let result = engine.lint(&root, &model);
 
-    let naming: Vec<_> = result.diagnostics.iter()
+    let naming: Vec<_> = result
+        .diagnostics
+        .iter()
         .filter(|d| d.rule == "naming-convention")
         .collect();
     assert_eq!(naming.len(), 1);
@@ -56,7 +62,9 @@ fn snake_case_no_warning() {
     let engine = LintEngine::with_defaults();
     let result = engine.lint(&root, &model);
 
-    let naming: Vec<_> = result.diagnostics.iter()
+    let naming: Vec<_> = result
+        .diagnostics
+        .iter()
         .filter(|d| d.rule == "naming-convention")
         .collect();
     assert_eq!(naming.len(), 0);
@@ -68,7 +76,9 @@ fn missing_docs_info() {
     let engine = LintEngine::with_defaults();
     let result = engine.lint_syntax(&root);
 
-    let docs: Vec<_> = result.diagnostics.iter()
+    let docs: Vec<_> = result
+        .diagnostics
+        .iter()
         .filter(|d| d.rule == "missing-docs")
         .collect();
     assert_eq!(docs.len(), 1);
@@ -92,7 +102,9 @@ fn multiple_functions_linted() {
     let engine = LintEngine::with_defaults();
     let result = engine.lint_syntax(&root);
 
-    let empty_fn: Vec<_> = result.diagnostics.iter()
+    let empty_fn: Vec<_> = result
+        .diagnostics
+        .iter()
         .filter(|d| d.rule == "empty-function")
         .collect();
     assert_eq!(empty_fn.len(), 2);
@@ -100,14 +112,20 @@ fn multiple_functions_linted() {
 
 #[test]
 fn custom_rule() {
-    use crate::rules::{LintRule, LintDiagnostic};
+    use crate::rules::{LintDiagnostic, LintRule};
     use semtree_core::SyntaxKind;
 
     struct NoStructs;
     impl LintRule for NoStructs {
-        fn name(&self) -> &str { "no-structs" }
-        fn description(&self) -> &str { "disallows struct definitions" }
-        fn default_severity(&self) -> LintSeverity { LintSeverity::Error }
+        fn name(&self) -> &str {
+            "no-structs"
+        }
+        fn description(&self) -> &str {
+            "disallows struct definitions"
+        }
+        fn default_severity(&self) -> LintSeverity {
+            LintSeverity::Error
+        }
         fn check(&self, root: &SyntaxNode, _model: Option<&SemanticModel>) -> Vec<LintDiagnostic> {
             let mut diags = Vec::new();
             for node in root.descendants() {

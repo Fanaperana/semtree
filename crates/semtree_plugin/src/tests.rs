@@ -1,5 +1,5 @@
-use crate::traits::*;
 use crate::registry::PluginRegistry;
+use crate::traits::*;
 use semtree_grammar::Grammar;
 use semtree_red::SyntaxNode;
 

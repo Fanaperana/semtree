@@ -1,9 +1,9 @@
 use semtree_core::SyntaxKind;
-use semtree_red::{SyntaxNode, SyntaxElement};
+use semtree_red::{SyntaxElement, SyntaxNode};
 use smol_str::SmolStr;
 use text_size::TextRange;
 
-use crate::diagnostics::{Diagnostic, DiagnosticSeverity};
+use crate::diagnostics::Diagnostic;
 use crate::scope::{ScopeId, ScopeTree};
 use crate::symbols::{Symbol, SymbolKind, SymbolTable};
 
@@ -39,12 +39,17 @@ impl SemanticModel {
 
     /// Find all references to a symbol by name.
     pub fn find_references(&self, name: &str) -> Vec<&Reference> {
-        let symbol_ids: Vec<usize> = self.symbols.all().iter().enumerate()
+        let symbol_ids: Vec<usize> = self
+            .symbols
+            .all()
+            .iter()
+            .enumerate()
             .filter(|(_, s)| s.name == name)
             .map(|(i, _)| i)
             .collect();
 
-        self.references.iter()
+        self.references
+            .iter()
             .filter(|r| symbol_ids.contains(&r.target_symbol))
             .collect()
     }
@@ -100,15 +105,15 @@ impl SemanticModel {
 
         // Track identifier references.
         for elem in node.children_with_tokens() {
-            if let SyntaxElement::Token(tok) = elem {
-                if tok.kind() == SyntaxKind::IDENT {
-                    let name = tok.text();
-                    if let Some(sym_id) = self.scopes.resolve(name, scope) {
-                        self.references.push(Reference {
-                            range: tok.text_range(),
-                            target_symbol: sym_id,
-                        });
-                    }
+            if let SyntaxElement::Token(tok) = elem
+                && tok.kind() == SyntaxKind::IDENT
+            {
+                let name = tok.text();
+                if let Some(sym_id) = self.scopes.resolve(name, scope) {
+                    self.references.push(Reference {
+                        range: tok.text_range(),
+                        target_symbol: sym_id,
+                    });
                 }
             }
         }
@@ -139,20 +144,20 @@ impl SemanticModel {
         // Register parameters.
         if let Some(param_list) = node.child_node(SyntaxKind::PARAM_LIST) {
             for param in param_list.children() {
-                if param.kind() == SyntaxKind::PARAM {
-                    if let Some(name_tok) = param.child_token(SyntaxKind::IDENT) {
-                        let name: SmolStr = name_tok.text().into();
-                        let sym_id = self.symbols.add(Symbol {
-                            name: name.clone(),
-                            kind: SymbolKind::Parameter,
-                            range: param.text_range(),
-                            scope: fn_scope,
-                            is_public: false,
-                            is_mutable: false,
-                        });
-                        if let Some(scope_data) = self.scopes.get_mut(fn_scope) {
-                            scope_data.define(name, sym_id);
-                        }
+                if param.kind() == SyntaxKind::PARAM
+                    && let Some(name_tok) = param.child_token(SyntaxKind::IDENT)
+                {
+                    let name: SmolStr = name_tok.text().into();
+                    let sym_id = self.symbols.add(Symbol {
+                        name: name.clone(),
+                        kind: SymbolKind::Parameter,
+                        range: param.text_range(),
+                        scope: fn_scope,
+                        is_public: false,
+                        is_mutable: false,
+                    });
+                    if let Some(scope_data) = self.scopes.get_mut(fn_scope) {
+                        scope_data.define(name, sym_id);
                     }
                 }
             }
@@ -214,18 +219,18 @@ impl SemanticModel {
 
         // Register fields.
         for child in node.children() {
-            if child.kind() == SyntaxKind::FIELD_DEF {
-                if let Some(name_tok) = child.child_token(SyntaxKind::IDENT) {
-                    let name: SmolStr = name_tok.text().into();
-                    self.symbols.add(Symbol {
-                        name,
-                        kind: SymbolKind::Field,
-                        range: child.text_range(),
-                        scope,
-                        is_public: false,
-                        is_mutable: false,
-                    });
-                }
+            if child.kind() == SyntaxKind::FIELD_DEF
+                && let Some(name_tok) = child.child_token(SyntaxKind::IDENT)
+            {
+                let name: SmolStr = name_tok.text().into();
+                self.symbols.add(Symbol {
+                    name,
+                    kind: SymbolKind::Field,
+                    range: child.text_range(),
+                    scope,
+                    is_public: false,
+                    is_mutable: false,
+                });
             }
         }
     }
@@ -249,18 +254,18 @@ impl SemanticModel {
         }
 
         for child in node.children() {
-            if child.kind() == SyntaxKind::VARIANT_DEF {
-                if let Some(name_tok) = child.child_token(SyntaxKind::IDENT) {
-                    let name: SmolStr = name_tok.text().into();
-                    self.symbols.add(Symbol {
-                        name,
-                        kind: SymbolKind::Variant,
-                        range: child.text_range(),
-                        scope,
-                        is_public: false,
-                        is_mutable: false,
-                    });
-                }
+            if child.kind() == SyntaxKind::VARIANT_DEF
+                && let Some(name_tok) = child.child_token(SyntaxKind::IDENT)
+            {
+                let name: SmolStr = name_tok.text().into();
+                self.symbols.add(Symbol {
+                    name,
+                    kind: SymbolKind::Variant,
+                    range: child.text_range(),
+                    scope,
+                    is_public: false,
+                    is_mutable: false,
+                });
             }
         }
     }
@@ -294,6 +299,8 @@ impl SemanticModel {
     }
 
     fn has_keyword(&self, node: &SyntaxNode, kw: SyntaxKind) -> bool {
-        node.children_with_tokens().into_iter().any(|e| e.kind() == kw)
+        node.children_with_tokens()
+            .into_iter()
+            .any(|e| e.kind() == kw)
     }
 }

@@ -31,7 +31,7 @@ impl Default for FormatConfig {
 impl FormatConfig {
     pub fn indent_str(&self) -> String {
         if self.use_tabs {
-            "\t".repeat(1)
+            "\t".to_string()
         } else {
             " ".repeat(self.indent_size)
         }

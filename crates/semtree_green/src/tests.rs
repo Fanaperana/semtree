@@ -1,5 +1,5 @@
-use semtree_core::SyntaxKind;
 use crate::{GreenNodeBuilder, NodeOrToken};
+use semtree_core::SyntaxKind;
 
 #[test]
 fn build_simple_tree() {

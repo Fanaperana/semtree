@@ -1,6 +1,6 @@
 use semtree_core::SyntaxKind;
 use semtree_grammar::Grammar;
-use semtree_green::{GreenNode, GreenElement, GreenNodeBuilder, NodeOrToken};
+use semtree_green::{GreenElement, GreenNode, GreenNodeBuilder, NodeOrToken};
 use semtree_red::SyntaxNode;
 use text_size::{TextRange, TextSize};
 
@@ -55,10 +55,11 @@ pub fn apply_edits(source: &str, edits: &[EditRegion]) -> String {
 /// from old and new parses share the same Arc allocation automatically.
 pub struct IncrementalParser {
     parser: RuntimeParser,
+    #[allow(dead_code)]
     lexer: RuntimeLexer,
     prev_tree: Option<GreenNode>,
     prev_source: String,
-    /// Reusable node cache across parses for structural sharing.
+    #[allow(dead_code)]
     node_cache: Option<semtree_green::NodeCache>,
 }
 

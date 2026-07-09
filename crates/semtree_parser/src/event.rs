@@ -15,5 +15,6 @@ pub enum Event {
     /// Finish the current node.
     FinishNode,
     /// A placeholder event that can be overwritten.
+    #[allow(dead_code)]
     Placeholder,
 }

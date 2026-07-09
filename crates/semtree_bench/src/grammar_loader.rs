@@ -1,6 +1,6 @@
 //! Load shipped grammars from `grammars/*.semtree` for benchmarks and tests.
 
-use semtree_grammar::{parse_semtree_dsl, Grammar};
+use semtree_grammar::{Grammar, parse_semtree_dsl};
 use std::path::{Path, PathBuf};
 
 /// Resolve the repo `grammars/` directory relative to this crate.

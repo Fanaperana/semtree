@@ -197,7 +197,11 @@ impl<'g> TableBuilder<'g> {
     }
 
     /// Convert a RuleExpr into alternative right-hand sides with precedence.
-    fn expr_to_alternatives(&mut self, expr: &RuleExpr, inherited_prec: i32) -> Vec<(Vec<Symbol>, i32)> {
+    fn expr_to_alternatives(
+        &mut self,
+        expr: &RuleExpr,
+        inherited_prec: i32,
+    ) -> Vec<(Vec<Symbol>, i32)> {
         match expr {
             RuleExpr::Literal(s) => vec![(vec![Symbol::Terminal(s.clone())], inherited_prec)],
             RuleExpr::RuleRef(name) => {
@@ -257,9 +261,7 @@ impl<'g> TableBuilder<'g> {
     fn compute_first_sets(&mut self) {
         let nt_names: Vec<SmolStr> = self.grammar.rules.keys().cloned().collect();
         for name in &nt_names {
-            self.first_sets
-                .entry(name.clone())
-                .or_insert_with(FxHashSet::default);
+            self.first_sets.entry(name.clone()).or_default();
         }
 
         let mut changed = true;
@@ -270,10 +272,7 @@ impl<'g> TableBuilder<'g> {
                     continue;
                 }
                 let first_of_rhs = self.first_of_sequence(&prod.rhs);
-                let entry = self
-                    .first_sets
-                    .entry(prod.lhs.clone())
-                    .or_insert_with(FxHashSet::default);
+                let entry = self.first_sets.entry(prod.lhs.clone()).or_default();
                 for sym in first_of_rhs {
                     if entry.insert(sym) {
                         changed = true;
@@ -327,9 +326,7 @@ impl<'g> TableBuilder<'g> {
     fn compute_follow_sets(&mut self) {
         let nt_names: Vec<SmolStr> = self.grammar.rules.keys().cloned().collect();
         for name in &nt_names {
-            self.follow_sets
-                .entry(name.clone())
-                .or_insert_with(FxHashSet::default);
+            self.follow_sets.entry(name.clone()).or_default();
         }
 
         // FOLLOW(start) includes $
@@ -340,7 +337,7 @@ impl<'g> TableBuilder<'g> {
             .unwrap_or_else(|| "source_file".into());
         self.follow_sets
             .entry(start)
-            .or_insert_with(FxHashSet::default)
+            .or_default()
             .insert(Symbol::Eof);
 
         let mut changed = true;
@@ -353,10 +350,7 @@ impl<'g> TableBuilder<'g> {
                         let rest = &prod.rhs[i + 1..];
                         let first_rest = self.first_of_sequence(rest);
 
-                        let entry = self
-                            .follow_sets
-                            .entry(name.clone())
-                            .or_insert_with(FxHashSet::default);
+                        let entry = self.follow_sets.entry(name.clone()).or_default();
 
                         for s in &first_rest {
                             if *s != Symbol::Epsilon && entry.insert(s.clone()) {
@@ -372,10 +366,7 @@ impl<'g> TableBuilder<'g> {
                                 .unwrap_or_default()
                                 .into_iter()
                                 .collect();
-                            let entry = self
-                                .follow_sets
-                                .entry(name.clone())
-                                .or_insert_with(FxHashSet::default);
+                            let entry = self.follow_sets.entry(name.clone()).or_default();
                             for s in follow_lhs {
                                 if entry.insert(s) {
                                     changed = true;
@@ -451,27 +442,27 @@ impl<'g> TableBuilder<'g> {
                 break;
             }
 
-            if let Some(sym) = item.next_symbol(&self.productions) {
-                if let Symbol::NonTerminal(name) = sym {
-                    // Find all productions for this non-terminal.
-                    let rest = &self.productions[item.prod_id].rhs[item.dot + 1..];
-                    let mut lookaheads = self.first_of_sequence(rest);
-                    if lookaheads.contains(&Symbol::Epsilon) {
-                        lookaheads.remove(&Symbol::Epsilon);
-                        lookaheads.insert(item.lookahead.clone());
-                    }
+            if let Some(sym) = item.next_symbol(&self.productions)
+                && let Symbol::NonTerminal(name) = sym
+            {
+                // Find all productions for this non-terminal.
+                let rest = &self.productions[item.prod_id].rhs[item.dot + 1..];
+                let mut lookaheads = self.first_of_sequence(rest);
+                if lookaheads.contains(&Symbol::Epsilon) {
+                    lookaheads.remove(&Symbol::Epsilon);
+                    lookaheads.insert(item.lookahead.clone());
+                }
 
-                    for prod in &self.productions {
-                        if prod.lhs == *name {
-                            for la in &lookaheads {
-                                let new_item = LRItem {
-                                    prod_id: prod.id,
-                                    dot: 0,
-                                    lookahead: la.clone(),
-                                };
-                                if result.insert(new_item.clone()) {
-                                    worklist.push(new_item);
-                                }
+                for prod in &self.productions {
+                    if prod.lhs == *name {
+                        for la in &lookaheads {
+                            let new_item = LRItem {
+                                prod_id: prod.id,
+                                dot: 0,
+                                lookahead: la.clone(),
+                            };
+                            if result.insert(new_item.clone()) {
+                                worklist.push(new_item);
                             }
                         }
                     }
@@ -484,10 +475,10 @@ impl<'g> TableBuilder<'g> {
     fn goto_set(&self, items: &BTreeSet<LRItem>, symbol: &Symbol) -> BTreeSet<LRItem> {
         let mut result = BTreeSet::new();
         for item in items {
-            if let Some(next) = item.next_symbol(&self.productions) {
-                if next == symbol {
-                    result.insert(item.advance());
-                }
+            if let Some(next) = item.next_symbol(&self.productions)
+                && next == symbol
+            {
+                result.insert(item.advance());
             }
         }
         result
@@ -497,10 +488,10 @@ impl<'g> TableBuilder<'g> {
         let mut seen = FxHashSet::default();
         let mut result = Vec::new();
         for item in items {
-            if let Some(sym) = item.next_symbol(&self.productions) {
-                if seen.insert(sym.clone()) {
-                    result.push(sym.clone());
-                }
+            if let Some(sym) = item.next_symbol(&self.productions)
+                && seen.insert(sym.clone())
+            {
+                result.push(sym.clone());
             }
         }
         result
@@ -528,11 +519,7 @@ impl<'g> TableBuilder<'g> {
                             .push(Action::Accept);
                     } else {
                         let la = &item.lookahead;
-                        let actions = action
-                            .get_mut(sid)
-                            .unwrap()
-                            .entry(la.clone())
-                            .or_default();
+                        let actions = action.get_mut(sid).unwrap().entry(la.clone()).or_default();
                         let new_action = Action::Reduce(item.prod_id);
                         if !actions.contains(&new_action) {
                             if !actions.is_empty() {

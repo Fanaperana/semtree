@@ -17,10 +17,7 @@ pub fn benchmark(file: PathBuf, iterations: u32) -> super::Result {
     let parse_result = Parser::parse(&source);
     let cold_elapsed = cold_start.elapsed();
     println!("  Cold parse:    {:>10?}", cold_elapsed);
-    println!(
-        "  Parse errors:  {}",
-        parse_result.errors.len()
-    );
+    println!("  Parse errors:  {}", parse_result.errors.len());
 
     // Warm parse (average over iterations)
     let warm_start = Instant::now();
@@ -71,11 +68,6 @@ fn count_nodes(node: &semtree_red::SyntaxNode) -> usize {
 }
 
 fn max_depth(node: &semtree_red::SyntaxNode) -> usize {
-    let child_max = node
-        .children()
-        .iter()
-        .map(max_depth)
-        .max()
-        .unwrap_or(0);
+    let child_max = node.children().iter().map(max_depth).max().unwrap_or(0);
     1 + child_max
 }

@@ -61,7 +61,7 @@ impl<'src> Cursor<'src> {
         self.pos = (self.pos + n).min(self.source.len());
     }
 
-    /// Extract a slice from `start` to the current position.
+    #[allow(dead_code)]
     pub fn slice_from(&self, start: usize) -> &'src str {
         &self.source[start..self.pos]
     }

@@ -19,13 +19,15 @@ impl LintResult {
     }
 
     pub fn error_count(&self) -> usize {
-        self.diagnostics.iter()
+        self.diagnostics
+            .iter()
             .filter(|d| d.severity == crate::rules::LintSeverity::Error)
             .count()
     }
 
     pub fn warning_count(&self) -> usize {
-        self.diagnostics.iter()
+        self.diagnostics
+            .iter()
             .filter(|d| d.severity == crate::rules::LintSeverity::Warning)
             .count()
     }

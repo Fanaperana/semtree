@@ -62,10 +62,10 @@ fn optimize_expr(
 ) -> RuleExpr {
     match expr {
         RuleExpr::RuleRef(name) => {
-            if inline_candidates.contains(name) {
-                if let Some(rule) = grammar.rules.get(name.as_str()) {
-                    return optimize_expr(&rule.expr, inline_candidates, grammar);
-                }
+            if inline_candidates.contains(name)
+                && let Some(rule) = grammar.rules.get(name.as_str())
+            {
+                return optimize_expr(&rule.expr, inline_candidates, grammar);
             }
             RuleExpr::RuleRef(name.clone())
         }
@@ -75,7 +75,7 @@ fn optimize_expr(
             for e in exprs {
                 let opt = optimize_expr(e, inline_candidates, grammar);
                 match opt {
-                    RuleExpr::Blank => {} // remove Blank from Seq
+                    RuleExpr::Blank => {}                       // remove Blank from Seq
                     RuleExpr::Seq(inner) => flat.extend(inner), // flatten nested Seq
                     other => flat.push(other),
                 }
@@ -120,15 +120,18 @@ fn optimize_expr(
         RuleExpr::Token(inner) => {
             RuleExpr::Token(Box::new(optimize_expr(inner, inline_candidates, grammar)))
         }
-        RuleExpr::Prec(p, inner) => {
-            RuleExpr::Prec(*p, Box::new(optimize_expr(inner, inline_candidates, grammar)))
-        }
-        RuleExpr::PrecLeft(p, inner) => {
-            RuleExpr::PrecLeft(*p, Box::new(optimize_expr(inner, inline_candidates, grammar)))
-        }
-        RuleExpr::PrecRight(p, inner) => {
-            RuleExpr::PrecRight(*p, Box::new(optimize_expr(inner, inline_candidates, grammar)))
-        }
+        RuleExpr::Prec(p, inner) => RuleExpr::Prec(
+            *p,
+            Box::new(optimize_expr(inner, inline_candidates, grammar)),
+        ),
+        RuleExpr::PrecLeft(p, inner) => RuleExpr::PrecLeft(
+            *p,
+            Box::new(optimize_expr(inner, inline_candidates, grammar)),
+        ),
+        RuleExpr::PrecRight(p, inner) => RuleExpr::PrecRight(
+            *p,
+            Box::new(optimize_expr(inner, inline_candidates, grammar)),
+        ),
         RuleExpr::Field(name, inner) => RuleExpr::Field(
             name.clone(),
             Box::new(optimize_expr(inner, inline_candidates, grammar)),

@@ -1,6 +1,6 @@
+use crate::SyntaxNode;
 use semtree_core::SyntaxKind;
 use semtree_green::GreenNodeBuilder;
-use crate::SyntaxNode;
 use text_size::TextSize;
 
 fn build_sample_tree() -> SyntaxNode {

@@ -27,30 +27,36 @@ impl<'a> Sink<'a> {
 
         // First pass: mark all events reachable through forward_parent chains
         for i in 0..self.events.len() {
-            if let Event::StartNode { forward_parent: Some(offset), .. } = &self.events[i] {
+            if let Event::StartNode {
+                forward_parent: Some(offset),
+                ..
+            } = &self.events[i]
+            {
                 let target = i + offset;
                 eaten[target] = true;
                 // Follow the chain
                 let mut idx = target;
-                loop {
-                    if let Event::StartNode { forward_parent: Some(off), .. } = &self.events[idx] {
-                        let next = idx + off;
-                        eaten[next] = true;
-                        idx = next;
-                    } else {
-                        break;
-                    }
+                while let Event::StartNode {
+                    forward_parent: Some(off),
+                    ..
+                } = &self.events[idx]
+                {
+                    let next = idx + off;
+                    eaten[next] = true;
+                    idx = next;
                 }
             }
         }
 
         let mut forward_parents = Vec::new();
 
-        for i in 0..self.events.len() {
+        for (i, is_eaten) in eaten.iter().enumerate() {
             match self.events[i].clone() {
-                Event::StartNode { kind, forward_parent } => {
-                    // Skip events that are only reachable as forward_parent targets
-                    if eaten[i] {
+                Event::StartNode {
+                    kind,
+                    forward_parent,
+                } => {
+                    if *is_eaten {
                         continue;
                     }
 
@@ -60,7 +66,10 @@ impl<'a> Sink<'a> {
                     while let Some(offset) = fp {
                         idx += offset;
                         match &self.events[idx] {
-                            Event::StartNode { kind, forward_parent } => {
+                            Event::StartNode {
+                                kind,
+                                forward_parent,
+                            } => {
                                 forward_parents.push(*kind);
                                 fp = *forward_parent;
                             }

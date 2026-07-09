@@ -200,9 +200,13 @@ fn expr(p: &mut Parser) {
 
 fn expr_bp(p: &mut Parser, min_bp: u8) {
     // Parse the LHS atom; `lhs` is the event position of its StartNode.
-    let mut lhs = match p.current() {
-        SyntaxKind::INT_LIT | SyntaxKind::FLOAT_LIT | SyntaxKind::STRING_LIT
-        | SyntaxKind::CHAR_LIT | SyntaxKind::KW_TRUE | SyntaxKind::KW_FALSE => {
+    let lhs = match p.current() {
+        SyntaxKind::INT_LIT
+        | SyntaxKind::FLOAT_LIT
+        | SyntaxKind::STRING_LIT
+        | SyntaxKind::CHAR_LIT
+        | SyntaxKind::KW_TRUE
+        | SyntaxKind::KW_FALSE => {
             let m = p.start_node(SyntaxKind::LITERAL);
             p.bump();
             p.finish_node();

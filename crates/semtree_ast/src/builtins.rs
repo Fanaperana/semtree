@@ -1,7 +1,7 @@
 use semtree_core::SyntaxKind;
 use semtree_red::{SyntaxNode, SyntaxToken};
 
-use crate::typed::{AstNode, AstChildren};
+use crate::typed::{AstChildren, AstNode};
 
 /// Macro to define a typed AST node with accessors.
 macro_rules! ast_node {
@@ -79,15 +79,21 @@ impl Function {
     }
 
     pub fn param_list(&self) -> Option<ParamList> {
-        self.syntax.child_node(SyntaxKind::PARAM_LIST).and_then(ParamList::cast)
+        self.syntax
+            .child_node(SyntaxKind::PARAM_LIST)
+            .and_then(ParamList::cast)
     }
 
     pub fn body(&self) -> Option<Block> {
-        self.syntax.child_node(SyntaxKind::BLOCK).and_then(Block::cast)
+        self.syntax
+            .child_node(SyntaxKind::BLOCK)
+            .and_then(Block::cast)
     }
 
     pub fn return_type(&self) -> Option<TypeRef> {
-        self.syntax.child_node(SyntaxKind::TYPE_REF).and_then(TypeRef::cast)
+        self.syntax
+            .child_node(SyntaxKind::TYPE_REF)
+            .and_then(TypeRef::cast)
     }
 }
 
@@ -117,7 +123,9 @@ impl Param {
     }
 
     pub fn ty(&self) -> Option<TypeRef> {
-        self.syntax.child_node(SyntaxKind::TYPE_REF).and_then(TypeRef::cast)
+        self.syntax
+            .child_node(SyntaxKind::TYPE_REF)
+            .and_then(TypeRef::cast)
     }
 }
 
@@ -130,7 +138,11 @@ ast_node! {
 
 impl Block {
     pub fn statements(&self) -> Vec<Statement> {
-        self.syntax.children().into_iter().filter_map(Statement::cast).collect()
+        self.syntax
+            .children()
+            .into_iter()
+            .filter_map(Statement::cast)
+            .collect()
     }
 }
 
@@ -179,11 +191,17 @@ impl LetStmt {
     }
 
     pub fn initializer(&self) -> Option<Expr> {
-        self.syntax.children().into_iter().filter_map(Expr::cast).next()
+        self.syntax
+            .children()
+            .into_iter()
+            .filter_map(Expr::cast)
+            .next()
     }
 
     pub fn ty(&self) -> Option<TypeRef> {
-        self.syntax.child_node(SyntaxKind::TYPE_REF).and_then(TypeRef::cast)
+        self.syntax
+            .child_node(SyntaxKind::TYPE_REF)
+            .and_then(TypeRef::cast)
     }
 }
 
@@ -196,7 +214,11 @@ ast_node! {
 
 impl ExprStmt {
     pub fn expr(&self) -> Option<Expr> {
-        self.syntax.children().into_iter().filter_map(Expr::cast).next()
+        self.syntax
+            .children()
+            .into_iter()
+            .filter_map(Expr::cast)
+            .next()
     }
 }
 
@@ -209,7 +231,11 @@ ast_node! {
 
 impl ReturnStmt {
     pub fn expr(&self) -> Option<Expr> {
-        self.syntax.children().into_iter().filter_map(Expr::cast).next()
+        self.syntax
+            .children()
+            .into_iter()
+            .filter_map(Expr::cast)
+            .next()
     }
 }
 
@@ -265,22 +291,36 @@ ast_node! {
 
 impl BinaryExpr {
     pub fn lhs(&self) -> Option<Expr> {
-        self.syntax.children().into_iter().filter_map(Expr::cast).next()
+        self.syntax
+            .children()
+            .into_iter()
+            .filter_map(Expr::cast)
+            .next()
     }
 
     pub fn rhs(&self) -> Option<Expr> {
-        self.syntax.children().into_iter().filter_map(Expr::cast).nth(1)
+        self.syntax
+            .children()
+            .into_iter()
+            .filter_map(Expr::cast)
+            .nth(1)
     }
 
     pub fn op(&self) -> Option<SyntaxToken> {
-        self.syntax.children_with_tokens().into_iter().find_map(|e| {
-            if let semtree_red::SyntaxElement::Token(t) = e {
-                if !t.kind().is_trivia() && t.kind() != SyntaxKind::IDENT && t.kind().0 >= 50 && t.kind().0 < 80 {
+        self.syntax
+            .children_with_tokens()
+            .into_iter()
+            .find_map(|e| {
+                if let semtree_red::SyntaxElement::Token(t) = e
+                    && !t.kind().is_trivia()
+                    && t.kind() != SyntaxKind::IDENT
+                    && t.kind().0 >= 50
+                    && t.kind().0 < 80
+                {
                     return Some(t);
                 }
-            }
-            None
-        })
+                None
+            })
     }
 
     pub fn op_text(&self) -> Option<String> {
@@ -297,11 +337,17 @@ ast_node! {
 
 impl CallExpr {
     pub fn callee(&self) -> Option<Expr> {
-        self.syntax.children().into_iter().filter_map(Expr::cast).next()
+        self.syntax
+            .children()
+            .into_iter()
+            .filter_map(Expr::cast)
+            .next()
     }
 
     pub fn arg_list(&self) -> Option<ArgList> {
-        self.syntax.child_node(SyntaxKind::ARG_LIST).and_then(ArgList::cast)
+        self.syntax
+            .child_node(SyntaxKind::ARG_LIST)
+            .and_then(ArgList::cast)
     }
 }
 
@@ -321,15 +367,27 @@ ast_node! {
 
 impl IfExpr {
     pub fn condition(&self) -> Option<Expr> {
-        self.syntax.children().into_iter().filter_map(Expr::cast).next()
+        self.syntax
+            .children()
+            .into_iter()
+            .filter_map(Expr::cast)
+            .next()
     }
 
     pub fn then_branch(&self) -> Option<Block> {
-        self.syntax.children().into_iter().filter_map(Block::cast).next()
+        self.syntax
+            .children()
+            .into_iter()
+            .filter_map(Block::cast)
+            .next()
     }
 
     pub fn else_branch(&self) -> Option<Block> {
-        self.syntax.children().into_iter().filter_map(Block::cast).nth(1)
+        self.syntax
+            .children()
+            .into_iter()
+            .filter_map(Block::cast)
+            .nth(1)
     }
 }
 
@@ -342,18 +400,23 @@ ast_node! {
 
 impl LiteralExpr {
     pub fn token(&self) -> Option<SyntaxToken> {
-        self.syntax.children_with_tokens().into_iter().find_map(|e| {
-            if let semtree_red::SyntaxElement::Token(t) = e {
-                if t.kind().is_literal() {
+        self.syntax
+            .children_with_tokens()
+            .into_iter()
+            .find_map(|e| {
+                if let semtree_red::SyntaxElement::Token(t) = e
+                    && t.kind().is_literal()
+                {
                     return Some(t);
                 }
-            }
-            None
-        })
+                None
+            })
     }
 
     pub fn text(&self) -> String {
-        self.token().map(|t| t.text().to_string()).unwrap_or_default()
+        self.token()
+            .map(|t| t.text().to_string())
+            .unwrap_or_default()
     }
 }
 
@@ -373,7 +436,11 @@ ast_node! {
 
 impl ParenExpr {
     pub fn inner(&self) -> Option<Expr> {
-        self.syntax.children().into_iter().filter_map(Expr::cast).next()
+        self.syntax
+            .children()
+            .into_iter()
+            .filter_map(Expr::cast)
+            .next()
     }
 }
 
@@ -418,7 +485,9 @@ impl FieldDef {
     }
 
     pub fn ty(&self) -> Option<TypeRef> {
-        self.syntax.child_node(SyntaxKind::TYPE_REF).and_then(TypeRef::cast)
+        self.syntax
+            .child_node(SyntaxKind::TYPE_REF)
+            .and_then(TypeRef::cast)
     }
 }
 

@@ -73,9 +73,7 @@ impl Parser {
     }
 
     pub(crate) fn nth(&self, n: usize) -> SyntaxKind {
-        self.nth_token(n)
-            .map(|t| t.kind)
-            .unwrap_or(SyntaxKind::EOF)
+        self.nth_token(n).map(|t| t.kind).unwrap_or(SyntaxKind::EOF)
     }
 
     fn nth_token(&self, n: usize) -> Option<&Token> {
@@ -93,6 +91,7 @@ impl Parser {
         None
     }
 
+    #[allow(dead_code)]
     pub(crate) fn current_text(&self) -> &str {
         self.nth_token(0).map(|t| t.text.as_str()).unwrap_or("")
     }
@@ -163,16 +162,14 @@ impl Parser {
     // ── Error recovery ────────────────────────────────────────
 
     pub(crate) fn error_here(&mut self, message: &str) {
-        let range = self
-            .nth_token(0)
-            .map(|t| t.range)
-            .unwrap_or_else(|| {
-                let pos = self.tokens.last().map(|t| u32::from(t.range.end())).unwrap_or(0);
-                text_size::TextRange::new(
-                    text_size::TextSize::new(pos),
-                    text_size::TextSize::new(pos),
-                )
-            });
+        let range = self.nth_token(0).map(|t| t.range).unwrap_or_else(|| {
+            let pos = self
+                .tokens
+                .last()
+                .map(|t| u32::from(t.range.end()))
+                .unwrap_or(0);
+            text_size::TextRange::new(text_size::TextSize::new(pos), text_size::TextSize::new(pos))
+        });
         self.errors.push(ParseError {
             message: message.to_string(),
             range,
@@ -191,7 +188,7 @@ impl Parser {
         self.finish_node();
     }
 
-    /// Skip tokens until we find one in the recovery set or EOF.
+    #[allow(dead_code)]
     pub(crate) fn recover_to(&mut self, recovery: &[SyntaxKind]) {
         while !self.at_end() && !recovery.contains(&self.current()) {
             self.error_recover("unexpected token");

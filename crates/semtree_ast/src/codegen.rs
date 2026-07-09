@@ -72,7 +72,10 @@ pub fn generate_ast(grammar: &Grammar) -> String {
 fn rule_name_to_kind_value(name: &str) -> u16 {
     let mut hash: u16 = 4096;
     for (i, b) in name.bytes().enumerate() {
-        hash = hash.wrapping_add(b as u16).wrapping_mul(31).wrapping_add(i as u16);
+        hash = hash
+            .wrapping_add(b as u16)
+            .wrapping_mul(31)
+            .wrapping_add(i as u16);
     }
     if hash < 4096 {
         hash += 4096;
@@ -106,7 +109,14 @@ fn to_snake_case(s: &str) -> String {
 fn is_terminal(name: &str) -> bool {
     matches!(
         name,
-        "Identifier" | "identifier" | "Integer" | "integer" | "String" | "string" | "Float" | "float"
+        "Identifier"
+            | "identifier"
+            | "Integer"
+            | "integer"
+            | "String"
+            | "string"
+            | "Float"
+            | "float"
     )
 }
 
@@ -114,6 +124,7 @@ fn is_terminal(name: &str) -> bool {
 ///
 /// Produces a trait with `visit_*` methods for each rule, plus a default
 /// `walk` implementation that traverses children.
+#[allow(dead_code)]
 pub fn generate_visitor(grammar: &Grammar) -> String {
     let mut out = String::new();
     out.push_str("// Auto-generated visitor by semtree_ast::codegen.\n\n");
@@ -153,13 +164,16 @@ pub fn generate_visitor(grammar: &Grammar) -> String {
 
     // Rewriter trait
     out.push_str("pub trait Rewriter {\n");
-    out.push_str("    fn rewrite_node(&mut self, node: &semtree_red::SyntaxNode) -> Option<String>;\n");
+    out.push_str(
+        "    fn rewrite_node(&mut self, node: &semtree_red::SyntaxNode) -> Option<String>;\n",
+    );
     out.push_str("}\n");
 
     out
 }
 
 /// Generate a CLI-friendly grammar summary.
+#[allow(dead_code)]
 pub fn grammar_summary(grammar: &Grammar) -> String {
     let mut out = String::new();
     out.push_str(&format!("Language: {}\n", grammar.name));
@@ -169,7 +183,11 @@ pub fn grammar_summary(grammar: &Grammar) -> String {
 
     out.push_str("Rules:\n");
     for (name, rule) in &grammar.rules {
-        let fields: Vec<_> = rule.fields.iter().map(|f| format!("{}: {}", f.name, f.rule)).collect();
+        let fields: Vec<_> = rule
+            .fields
+            .iter()
+            .map(|f| format!("{}: {}", f.name, f.rule))
+            .collect();
         if fields.is_empty() {
             out.push_str(&format!("  {name}\n"));
         } else {
@@ -179,7 +197,14 @@ pub fn grammar_summary(grammar: &Grammar) -> String {
 
     if !grammar.keywords.is_empty() {
         out.push_str("\nKeywords: ");
-        out.push_str(&grammar.keywords.iter().map(|k| k.as_str()).collect::<Vec<_>>().join(", "));
+        out.push_str(
+            &grammar
+                .keywords
+                .iter()
+                .map(|k| k.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
         out.push('\n');
     }
 

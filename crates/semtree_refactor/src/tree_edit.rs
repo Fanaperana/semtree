@@ -59,19 +59,23 @@ impl TreeEditor {
             .edits
             .iter()
             .map(|e| match e {
-                EditOp::Replace { range, new_text } => {
-                    (u32::from(range.start()), u32::from(range.len()), new_text.clone())
-                }
+                EditOp::Replace { range, new_text } => (
+                    u32::from(range.start()),
+                    u32::from(range.len()),
+                    new_text.clone(),
+                ),
                 EditOp::InsertBefore { offset, text } => (*offset, 0, text.clone()),
                 EditOp::InsertAfter { offset, text } => (*offset, 0, text.clone()),
-                EditOp::Remove { range } => {
-                    (u32::from(range.start()), u32::from(range.len()), String::new())
-                }
+                EditOp::Remove { range } => (
+                    u32::from(range.start()),
+                    u32::from(range.len()),
+                    String::new(),
+                ),
             })
             .collect();
 
         // Sort by offset descending so earlier edits don't shift later offsets
-        ops.sort_by(|a, b| b.0.cmp(&a.0));
+        ops.sort_by_key(|a| std::cmp::Reverse(a.0));
 
         let mut result = self.source;
         for (offset, delete_len, insert) in ops {

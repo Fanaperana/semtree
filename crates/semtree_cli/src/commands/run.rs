@@ -4,7 +4,7 @@ use rustc_hash::FxHashMap;
 use semtree_core::SyntaxKind;
 use semtree_grammar::parse_semtree_dsl;
 use semtree_red::SyntaxNode;
-use semtree_runtime::{RuntimeParser, GlrParser, IncrementalParser, EditRegion, apply_edits};
+use semtree_runtime::{EditRegion, GlrParser, IncrementalParser, RuntimeParser, apply_edits};
 use semtree_ts_import::import_tree_sitter_grammar;
 use smol_str::SmolStr;
 
@@ -64,10 +64,7 @@ pub fn run(
     eprintln!("Using grammar: {}", grammar_path.display());
     let grammar_src = std::fs::read_to_string(&grammar_path)?;
 
-    let grammar = if grammar_path
-        .extension()
-        .is_some_and(|ext| ext == "json")
-    {
+    let grammar = if grammar_path.extension().is_some_and(|ext| ext == "json") {
         import_tree_sitter_grammar(&grammar_src)
             .map_err(|e| format!("failed to import grammar: {e}"))?
     } else {
@@ -90,7 +87,7 @@ pub fn run(
             };
             (result.syntax(), result.kind_names, result.errors, extra)
         }
-        "rd" | _ => {
+        _ => {
             if incremental || edit.is_some() {
                 let mut inc = IncrementalParser::new(grammar);
                 let result = if let Some(spec) = edit {
@@ -110,12 +107,21 @@ pub fn run(
                     result.syntax(),
                     result.kind_names,
                     result.errors,
-                    if incremental { " (incremental parser)".into() } else { String::new() },
+                    if incremental {
+                        " (incremental parser)".into()
+                    } else {
+                        String::new()
+                    },
                 )
             } else {
                 let parser = RuntimeParser::new(grammar);
                 let result = parser.parse(&source);
-                (result.syntax(), result.kind_names, result.errors, String::new())
+                (
+                    result.syntax(),
+                    result.kind_names,
+                    result.errors,
+                    String::new(),
+                )
             }
         }
     };
@@ -133,7 +139,10 @@ pub fn run(
             println!("{}", serde_json::to_string_pretty(&json)?);
         }
         _ => {
-            return Err(format!("unknown format: {format}. Use tree, sexp, sexp-pretty, inspect, or json").into());
+            return Err(format!(
+                "unknown format: {format}. Use tree, sexp, sexp-pretty, inspect, or json"
+            )
+            .into());
         }
     }
 
@@ -184,7 +193,12 @@ fn print_tree(node: &SyntaxNode, indent: usize, names: &FxHashMap<SyntaxKind, Sm
             semtree_red::SyntaxElement::Node(n) => print_tree(&n, indent + 1, names),
             semtree_red::SyntaxElement::Token(t) => {
                 let tp = "  ".repeat(indent + 1);
-                println!("{tp}{}@{:?} {:?}", kind_name(t.kind(), names), t.text_range(), t.text());
+                println!(
+                    "{tp}{}@{:?} {:?}",
+                    kind_name(t.kind(), names),
+                    t.text_range(),
+                    t.text()
+                );
             }
         }
     }
@@ -198,12 +212,18 @@ fn print_sexp_pretty(node: &SyntaxNode, indent: usize, names: &FxHashMap<SyntaxK
 
     let children: Vec<_> = node.children_with_tokens().into_iter().collect();
     if children.is_empty() {
-        println!("{prefix}({name}) [{}..{}]", u32::from(range.start()), u32::from(range.end()));
+        println!(
+            "{prefix}({name}) [{}..{}]",
+            u32::from(range.start()),
+            u32::from(range.end())
+        );
         return;
     }
 
     // Check if all children are tokens (leaf node with only tokens).
-    let all_tokens = children.iter().all(|c| matches!(c, semtree_red::SyntaxElement::Token(_)));
+    let all_tokens = children
+        .iter()
+        .all(|c| matches!(c, semtree_red::SyntaxElement::Token(_)));
 
     if all_tokens && children.len() <= 3 {
         print!("{prefix}({name}");
@@ -217,14 +237,22 @@ fn print_sexp_pretty(node: &SyntaxNode, indent: usize, names: &FxHashMap<SyntaxK
                 print!(" ({tk} {text:?})");
             }
         }
-        println!(") [{}..{}]", u32::from(range.start()), u32::from(range.end()));
+        println!(
+            ") [{}..{}]",
+            u32::from(range.start()),
+            u32::from(range.end())
+        );
         return;
     }
 
-    println!("{prefix}({name} [{}..{}]", u32::from(range.start()), u32::from(range.end()));
+    println!(
+        "{prefix}({name} [{}..{}]",
+        u32::from(range.start()),
+        u32::from(range.end())
+    );
     for child in &children {
         match child {
-            semtree_red::SyntaxElement::Node(n) => print_sexp_pretty(&n, indent + 1, names),
+            semtree_red::SyntaxElement::Node(n) => print_sexp_pretty(n, indent + 1, names),
             semtree_red::SyntaxElement::Token(t) => {
                 let tk = kind_name(t.kind(), names);
                 let text = t.text();
@@ -233,7 +261,11 @@ fn print_sexp_pretty(node: &SyntaxNode, indent: usize, names: &FxHashMap<SyntaxK
                 }
                 let tp = "  ".repeat(indent + 1);
                 let tr = t.text_range();
-                println!("{tp}({tk} {text:?}) [{}..{}]", u32::from(tr.start()), u32::from(tr.end()));
+                println!(
+                    "{tp}({tk} {text:?}) [{}..{}]",
+                    u32::from(tr.start()),
+                    u32::from(tr.end())
+                );
             }
         }
     }
@@ -245,7 +277,13 @@ fn print_sexp_pretty(node: &SyntaxNode, indent: usize, names: &FxHashMap<SyntaxK
 fn print_inspect(node: &SyntaxNode, depth: usize, names: &FxHashMap<SyntaxKind, SmolStr>) {
     let range = node.text_range();
     let name = kind_name(node.kind(), names);
-    println!("{}|{}|{}|{}|", depth, u32::from(range.start()), u32::from(range.end()), name);
+    println!(
+        "{}|{}|{}|{}|",
+        depth,
+        u32::from(range.start()),
+        u32::from(range.end()),
+        name
+    );
 
     for child in node.children_with_tokens() {
         match child {
@@ -254,7 +292,14 @@ fn print_inspect(node: &SyntaxNode, depth: usize, names: &FxHashMap<SyntaxKind, 
                 let tk = kind_name(t.kind(), names);
                 let tr = t.text_range();
                 let text = t.text().replace('\n', "\\n").replace('\r', "\\r");
-                println!("{}|{}|{}|{}|{}", depth + 1, u32::from(tr.start()), u32::from(tr.end()), tk, text);
+                println!(
+                    "{}|{}|{}|{}|{}",
+                    depth + 1,
+                    u32::from(tr.start()),
+                    u32::from(tr.end()),
+                    tk,
+                    text
+                );
             }
         }
     }

@@ -3,8 +3,8 @@ use semtree_red::SyntaxNode;
 use semtree_semantic::SemanticModel;
 use text_size::{TextRange, TextSize};
 
-use crate::rename::rename_symbol;
 use crate::extract::extract_variable;
+use crate::rename::rename_symbol;
 use crate::tree_edit::TreeEditor;
 
 fn parse(source: &str) -> SyntaxNode {

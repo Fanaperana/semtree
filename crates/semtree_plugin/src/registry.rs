@@ -1,6 +1,4 @@
-use crate::traits::{
-    FormatterPlugin, LanguagePlugin, LintRulePlugin, LinterPlugin, QueryPlugin,
-};
+use crate::traits::{FormatterPlugin, LanguagePlugin, LintRulePlugin, LinterPlugin, QueryPlugin};
 
 pub struct PluginRegistry {
     languages: Vec<Box<dyn LanguagePlugin>>,

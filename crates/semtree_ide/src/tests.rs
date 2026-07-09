@@ -2,10 +2,12 @@ use semtree_parser::Parser;
 use semtree_red::SyntaxNode;
 use semtree_semantic::SemanticModel;
 
-use crate::semantic_tokens::{classify_tokens, SemanticTokenType};
-use crate::completion::{complete_at, CompletionKind};
-use crate::navigation::{goto_definition, find_references, document_symbols, hover_info, breadcrumbs};
+use crate::completion::{CompletionKind, complete_at};
 use crate::folding::folding_ranges;
+use crate::navigation::{
+    breadcrumbs, document_symbols, find_references, goto_definition, hover_info,
+};
+use crate::semantic_tokens::{SemanticTokenType, classify_tokens};
 
 fn parse(source: &str) -> SyntaxNode {
     Parser::parse(source).syntax()

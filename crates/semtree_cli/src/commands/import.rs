@@ -5,8 +5,8 @@ use semtree_ts_import::import_tree_sitter_grammar;
 pub fn import(file: PathBuf, output: Option<PathBuf>) -> super::Result {
     let json_str = std::fs::read_to_string(&file)?;
 
-    let grammar = import_tree_sitter_grammar(&json_str)
-        .map_err(|e| format!("import error: {e}"))?;
+    let grammar =
+        import_tree_sitter_grammar(&json_str).map_err(|e| format!("import error: {e}"))?;
 
     println!("Imported Tree-sitter grammar: {}", grammar.name);
     println!("  Rules: {}", grammar.rules.len());

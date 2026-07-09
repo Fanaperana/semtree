@@ -66,7 +66,10 @@ impl<'a> DslParser<'a> {
             } else if let Some(extra) = line.strip_prefix("extra ") {
                 grammar.extras.push(extra.trim().into());
                 self.pos += 1;
-            } else if line.starts_with("indent ") || line.starts_with("linebreak ") || line.starts_with("space ") {
+            } else if line.starts_with("indent ")
+                || line.starts_with("linebreak ")
+                || line.starts_with("space ")
+            {
                 self.parse_format_hint(&mut grammar);
             } else if line.contains(":=") {
                 self.parse_rule(&mut grammar)?;
@@ -173,7 +176,9 @@ impl<'a> DslParser<'a> {
                 exprs.push(RuleExpr::Repeat1(Box::new(RuleExpr::RuleRef(inner.into()))));
             } else if tok.ends_with('?') && tok.len() > 1 {
                 let inner = &tok[..tok.len() - 1];
-                exprs.push(RuleExpr::Optional(Box::new(RuleExpr::RuleRef(inner.into()))));
+                exprs.push(RuleExpr::Optional(Box::new(RuleExpr::RuleRef(
+                    inner.into(),
+                ))));
             } else if tok == "|" {
                 // Choice: collect remaining into a separate branch
                 let left = if exprs.len() == 1 {
@@ -202,15 +207,25 @@ impl<'a> DslParser<'a> {
         use crate::ir::FormatHint;
         let line = self.lines[self.pos].trim();
         if let Some(rule) = line.strip_prefix("indent ") {
-            grammar.format_hints.push(FormatHint::Indent(rule.trim().into()));
+            grammar
+                .format_hints
+                .push(FormatHint::Indent(rule.trim().into()));
         } else if let Some(rule) = line.strip_prefix("linebreak ") {
-            grammar.format_hints.push(FormatHint::Linebreak(rule.trim().into()));
+            grammar
+                .format_hints
+                .push(FormatHint::Linebreak(rule.trim().into()));
         } else if let Some(rest) = line.strip_prefix("space around ") {
-            grammar.format_hints.push(FormatHint::SpaceAround(rest.trim().trim_matches('"').into()));
+            grammar.format_hints.push(FormatHint::SpaceAround(
+                rest.trim().trim_matches('"').into(),
+            ));
         } else if let Some(rest) = line.strip_prefix("space before ") {
-            grammar.format_hints.push(FormatHint::SpaceBefore(rest.trim().trim_matches('"').into()));
+            grammar.format_hints.push(FormatHint::SpaceBefore(
+                rest.trim().trim_matches('"').into(),
+            ));
         } else if let Some(rest) = line.strip_prefix("space after ") {
-            grammar.format_hints.push(FormatHint::SpaceAfter(rest.trim().trim_matches('"').into()));
+            grammar
+                .format_hints
+                .push(FormatHint::SpaceAfter(rest.trim().trim_matches('"').into()));
         }
         self.pos += 1;
     }

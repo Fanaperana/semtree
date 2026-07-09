@@ -15,7 +15,7 @@ use semtree_semantic::SemanticModel;
 // ─── Configuration ──────────────────────────────────────────────────────────
 
 const DEFAULT_ITERATIONS: usize = 100;
-const SIZES: &[(& str, usize)] = &[
+const SIZES: &[(&str, usize)] = &[
     ("1KB", 1_024),
     ("10KB", 10_240),
     ("100KB", 102_400),
@@ -177,80 +177,101 @@ fn repeat_to_size(base: &str, target_size: usize) -> String {
 fn build_json_grammar() -> Grammar {
     let mut g = Grammar::new("json");
 
-    g.add_rule("source_file", Rule {
-        name: "source_file".into(),
-        expr: RuleExpr::RuleRef("value".into()),
-        fields: vec![],
-    });
+    g.add_rule(
+        "source_file",
+        Rule {
+            name: "source_file".into(),
+            expr: RuleExpr::RuleRef("value".into()),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("value", Rule {
-        name: "value".into(),
-        expr: RuleExpr::Choice(vec![
-            RuleExpr::RuleRef("object".into()),
-            RuleExpr::RuleRef("array".into()),
-            RuleExpr::RuleRef("String".into()),
-            RuleExpr::RuleRef("Integer".into()),
-            RuleExpr::RuleRef("Float".into()),
-            RuleExpr::Literal("true".into()),
-            RuleExpr::Literal("false".into()),
-            RuleExpr::Literal("null".into()),
-        ]),
-        fields: vec![],
-    });
+    g.add_rule(
+        "value",
+        Rule {
+            name: "value".into(),
+            expr: RuleExpr::Choice(vec![
+                RuleExpr::RuleRef("object".into()),
+                RuleExpr::RuleRef("array".into()),
+                RuleExpr::RuleRef("String".into()),
+                RuleExpr::RuleRef("Integer".into()),
+                RuleExpr::RuleRef("Float".into()),
+                RuleExpr::Literal("true".into()),
+                RuleExpr::Literal("false".into()),
+                RuleExpr::Literal("null".into()),
+            ]),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("object", Rule {
-        name: "object".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::Literal("{".into()),
-            RuleExpr::Optional(Box::new(RuleExpr::RuleRef("pair_list".into()))),
-            RuleExpr::Literal("}".into()),
-        ]),
-        fields: vec![],
-    });
+    g.add_rule(
+        "object",
+        Rule {
+            name: "object".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::Literal("{".into()),
+                RuleExpr::Optional(Box::new(RuleExpr::RuleRef("pair_list".into()))),
+                RuleExpr::Literal("}".into()),
+            ]),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("pair_list", Rule {
-        name: "pair_list".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::RuleRef("pair".into()),
-            RuleExpr::Repeat(Box::new(RuleExpr::Seq(vec![
-                RuleExpr::Literal(",".into()),
+    g.add_rule(
+        "pair_list",
+        Rule {
+            name: "pair_list".into(),
+            expr: RuleExpr::Seq(vec![
                 RuleExpr::RuleRef("pair".into()),
-            ]))),
-        ]),
-        fields: vec![],
-    });
+                RuleExpr::Repeat(Box::new(RuleExpr::Seq(vec![
+                    RuleExpr::Literal(",".into()),
+                    RuleExpr::RuleRef("pair".into()),
+                ]))),
+            ]),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("pair", Rule {
-        name: "pair".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::RuleRef("String".into()),
-            RuleExpr::Literal(":".into()),
-            RuleExpr::RuleRef("value".into()),
-        ]),
-        fields: vec![],
-    });
-
-    g.add_rule("array", Rule {
-        name: "array".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::Literal("[".into()),
-            RuleExpr::Optional(Box::new(RuleExpr::RuleRef("value_list".into()))),
-            RuleExpr::Literal("]".into()),
-        ]),
-        fields: vec![],
-    });
-
-    g.add_rule("value_list", Rule {
-        name: "value_list".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::RuleRef("value".into()),
-            RuleExpr::Repeat(Box::new(RuleExpr::Seq(vec![
-                RuleExpr::Literal(",".into()),
+    g.add_rule(
+        "pair",
+        Rule {
+            name: "pair".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::RuleRef("String".into()),
+                RuleExpr::Literal(":".into()),
                 RuleExpr::RuleRef("value".into()),
-            ]))),
-        ]),
-        fields: vec![],
-    });
+            ]),
+            fields: vec![],
+        },
+    );
+
+    g.add_rule(
+        "array",
+        Rule {
+            name: "array".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::Literal("[".into()),
+                RuleExpr::Optional(Box::new(RuleExpr::RuleRef("value_list".into()))),
+                RuleExpr::Literal("]".into()),
+            ]),
+            fields: vec![],
+        },
+    );
+
+    g.add_rule(
+        "value_list",
+        Rule {
+            name: "value_list".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::RuleRef("value".into()),
+                RuleExpr::Repeat(Box::new(RuleExpr::Seq(vec![
+                    RuleExpr::Literal(",".into()),
+                    RuleExpr::RuleRef("value".into()),
+                ]))),
+            ]),
+            fields: vec![],
+        },
+    );
 
     g
 }
@@ -271,169 +292,211 @@ fn build_javascript_grammar() -> Grammar {
     g.add_keyword("new");
     g.add_keyword("this");
 
-    g.add_rule("source_file", Rule {
-        name: "source_file".into(),
-        expr: RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("statement".into()))),
-        fields: vec![],
-    });
+    g.add_rule(
+        "source_file",
+        Rule {
+            name: "source_file".into(),
+            expr: RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("statement".into()))),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("statement", Rule {
-        name: "statement".into(),
-        expr: RuleExpr::Choice(vec![
-            RuleExpr::RuleRef("function_decl".into()),
-            RuleExpr::RuleRef("class_decl".into()),
-            RuleExpr::RuleRef("variable_decl".into()),
-            RuleExpr::RuleRef("return_stmt".into()),
-            RuleExpr::RuleRef("if_stmt".into()),
-            RuleExpr::RuleRef("for_stmt".into()),
-            RuleExpr::RuleRef("expression_stmt".into()),
-        ]),
-        fields: vec![],
-    });
-
-    g.add_rule("function_decl", Rule {
-        name: "function_decl".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::Literal("function".into()),
-            RuleExpr::RuleRef("Identifier".into()),
-            RuleExpr::Literal("(".into()),
-            RuleExpr::Optional(Box::new(RuleExpr::RuleRef("param_list".into()))),
-            RuleExpr::Literal(")".into()),
-            RuleExpr::RuleRef("block".into()),
-        ]),
-        fields: vec![],
-    });
-
-    g.add_rule("class_decl", Rule {
-        name: "class_decl".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::Literal("class".into()),
-            RuleExpr::RuleRef("Identifier".into()),
-            RuleExpr::Literal("{".into()),
-            RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("method_def".into()))),
-            RuleExpr::Literal("}".into()),
-        ]),
-        fields: vec![],
-    });
-
-    g.add_rule("method_def", Rule {
-        name: "method_def".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::RuleRef("Identifier".into()),
-            RuleExpr::Literal("(".into()),
-            RuleExpr::Optional(Box::new(RuleExpr::RuleRef("param_list".into()))),
-            RuleExpr::Literal(")".into()),
-            RuleExpr::RuleRef("block".into()),
-        ]),
-        fields: vec![],
-    });
-
-    g.add_rule("variable_decl", Rule {
-        name: "variable_decl".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::Choice(vec![
-                RuleExpr::Literal("const".into()),
-                RuleExpr::Literal("let".into()),
-                RuleExpr::Literal("var".into()),
+    g.add_rule(
+        "statement",
+        Rule {
+            name: "statement".into(),
+            expr: RuleExpr::Choice(vec![
+                RuleExpr::RuleRef("function_decl".into()),
+                RuleExpr::RuleRef("class_decl".into()),
+                RuleExpr::RuleRef("variable_decl".into()),
+                RuleExpr::RuleRef("return_stmt".into()),
+                RuleExpr::RuleRef("if_stmt".into()),
+                RuleExpr::RuleRef("for_stmt".into()),
+                RuleExpr::RuleRef("expression_stmt".into()),
             ]),
-            RuleExpr::RuleRef("Identifier".into()),
-            RuleExpr::Optional(Box::new(RuleExpr::Seq(vec![
-                RuleExpr::Literal("=".into()),
-                RuleExpr::RuleRef("expression".into()),
-            ]))),
-            RuleExpr::Literal(";".into()),
-        ]),
-        fields: vec![],
-    });
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("return_stmt", Rule {
-        name: "return_stmt".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::Literal("return".into()),
-            RuleExpr::Optional(Box::new(RuleExpr::RuleRef("expression".into()))),
-            RuleExpr::Literal(";".into()),
-        ]),
-        fields: vec![],
-    });
-
-    g.add_rule("if_stmt", Rule {
-        name: "if_stmt".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::Literal("if".into()),
-            RuleExpr::Literal("(".into()),
-            RuleExpr::RuleRef("expression".into()),
-            RuleExpr::Literal(")".into()),
-            RuleExpr::RuleRef("block_or_stmt".into()),
-        ]),
-        fields: vec![],
-    });
-
-    g.add_rule("for_stmt", Rule {
-        name: "for_stmt".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::Literal("for".into()),
-            RuleExpr::Literal("(".into()),
-            RuleExpr::RuleRef("expression".into()),
-            RuleExpr::Literal(";".into()),
-            RuleExpr::RuleRef("expression".into()),
-            RuleExpr::Literal(";".into()),
-            RuleExpr::RuleRef("expression".into()),
-            RuleExpr::Literal(")".into()),
-            RuleExpr::RuleRef("block".into()),
-        ]),
-        fields: vec![],
-    });
-
-    g.add_rule("expression_stmt", Rule {
-        name: "expression_stmt".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::RuleRef("expression".into()),
-            RuleExpr::Literal(";".into()),
-        ]),
-        fields: vec![],
-    });
-
-    g.add_rule("expression", Rule {
-        name: "expression".into(),
-        expr: RuleExpr::Choice(vec![
-            RuleExpr::RuleRef("String".into()),
-            RuleExpr::RuleRef("Integer".into()),
-            RuleExpr::RuleRef("Float".into()),
-            RuleExpr::RuleRef("Identifier".into()),
-        ]),
-        fields: vec![],
-    });
-
-    g.add_rule("block_or_stmt", Rule {
-        name: "block_or_stmt".into(),
-        expr: RuleExpr::Choice(vec![
-            RuleExpr::RuleRef("block".into()),
-            RuleExpr::RuleRef("statement".into()),
-        ]),
-        fields: vec![],
-    });
-
-    g.add_rule("block", Rule {
-        name: "block".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::Literal("{".into()),
-            RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("statement".into()))),
-            RuleExpr::Literal("}".into()),
-        ]),
-        fields: vec![],
-    });
-
-    g.add_rule("param_list", Rule {
-        name: "param_list".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::RuleRef("Identifier".into()),
-            RuleExpr::Repeat(Box::new(RuleExpr::Seq(vec![
-                RuleExpr::Literal(",".into()),
+    g.add_rule(
+        "function_decl",
+        Rule {
+            name: "function_decl".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::Literal("function".into()),
                 RuleExpr::RuleRef("Identifier".into()),
-            ]))),
-        ]),
-        fields: vec![],
-    });
+                RuleExpr::Literal("(".into()),
+                RuleExpr::Optional(Box::new(RuleExpr::RuleRef("param_list".into()))),
+                RuleExpr::Literal(")".into()),
+                RuleExpr::RuleRef("block".into()),
+            ]),
+            fields: vec![],
+        },
+    );
+
+    g.add_rule(
+        "class_decl",
+        Rule {
+            name: "class_decl".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::Literal("class".into()),
+                RuleExpr::RuleRef("Identifier".into()),
+                RuleExpr::Literal("{".into()),
+                RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("method_def".into()))),
+                RuleExpr::Literal("}".into()),
+            ]),
+            fields: vec![],
+        },
+    );
+
+    g.add_rule(
+        "method_def",
+        Rule {
+            name: "method_def".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::RuleRef("Identifier".into()),
+                RuleExpr::Literal("(".into()),
+                RuleExpr::Optional(Box::new(RuleExpr::RuleRef("param_list".into()))),
+                RuleExpr::Literal(")".into()),
+                RuleExpr::RuleRef("block".into()),
+            ]),
+            fields: vec![],
+        },
+    );
+
+    g.add_rule(
+        "variable_decl",
+        Rule {
+            name: "variable_decl".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::Choice(vec![
+                    RuleExpr::Literal("const".into()),
+                    RuleExpr::Literal("let".into()),
+                    RuleExpr::Literal("var".into()),
+                ]),
+                RuleExpr::RuleRef("Identifier".into()),
+                RuleExpr::Optional(Box::new(RuleExpr::Seq(vec![
+                    RuleExpr::Literal("=".into()),
+                    RuleExpr::RuleRef("expression".into()),
+                ]))),
+                RuleExpr::Literal(";".into()),
+            ]),
+            fields: vec![],
+        },
+    );
+
+    g.add_rule(
+        "return_stmt",
+        Rule {
+            name: "return_stmt".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::Literal("return".into()),
+                RuleExpr::Optional(Box::new(RuleExpr::RuleRef("expression".into()))),
+                RuleExpr::Literal(";".into()),
+            ]),
+            fields: vec![],
+        },
+    );
+
+    g.add_rule(
+        "if_stmt",
+        Rule {
+            name: "if_stmt".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::Literal("if".into()),
+                RuleExpr::Literal("(".into()),
+                RuleExpr::RuleRef("expression".into()),
+                RuleExpr::Literal(")".into()),
+                RuleExpr::RuleRef("block_or_stmt".into()),
+            ]),
+            fields: vec![],
+        },
+    );
+
+    g.add_rule(
+        "for_stmt",
+        Rule {
+            name: "for_stmt".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::Literal("for".into()),
+                RuleExpr::Literal("(".into()),
+                RuleExpr::RuleRef("expression".into()),
+                RuleExpr::Literal(";".into()),
+                RuleExpr::RuleRef("expression".into()),
+                RuleExpr::Literal(";".into()),
+                RuleExpr::RuleRef("expression".into()),
+                RuleExpr::Literal(")".into()),
+                RuleExpr::RuleRef("block".into()),
+            ]),
+            fields: vec![],
+        },
+    );
+
+    g.add_rule(
+        "expression_stmt",
+        Rule {
+            name: "expression_stmt".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::RuleRef("expression".into()),
+                RuleExpr::Literal(";".into()),
+            ]),
+            fields: vec![],
+        },
+    );
+
+    g.add_rule(
+        "expression",
+        Rule {
+            name: "expression".into(),
+            expr: RuleExpr::Choice(vec![
+                RuleExpr::RuleRef("String".into()),
+                RuleExpr::RuleRef("Integer".into()),
+                RuleExpr::RuleRef("Float".into()),
+                RuleExpr::RuleRef("Identifier".into()),
+            ]),
+            fields: vec![],
+        },
+    );
+
+    g.add_rule(
+        "block_or_stmt",
+        Rule {
+            name: "block_or_stmt".into(),
+            expr: RuleExpr::Choice(vec![
+                RuleExpr::RuleRef("block".into()),
+                RuleExpr::RuleRef("statement".into()),
+            ]),
+            fields: vec![],
+        },
+    );
+
+    g.add_rule(
+        "block",
+        Rule {
+            name: "block".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::Literal("{".into()),
+                RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("statement".into()))),
+                RuleExpr::Literal("}".into()),
+            ]),
+            fields: vec![],
+        },
+    );
+
+    g.add_rule(
+        "param_list",
+        Rule {
+            name: "param_list".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::RuleRef("Identifier".into()),
+                RuleExpr::Repeat(Box::new(RuleExpr::Seq(vec![
+                    RuleExpr::Literal(",".into()),
+                    RuleExpr::RuleRef("Identifier".into()),
+                ]))),
+            ]),
+            fields: vec![],
+        },
+    );
 
     g
 }
@@ -452,174 +515,219 @@ fn build_rust_grammar() -> Grammar {
     g.add_keyword("for");
     g.add_keyword("return");
 
-    g.add_rule("source_file", Rule {
-        name: "source_file".into(),
-        expr: RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("item".into()))),
-        fields: vec![],
-    });
+    g.add_rule(
+        "source_file",
+        Rule {
+            name: "source_file".into(),
+            expr: RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("item".into()))),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("item", Rule {
-        name: "item".into(),
-        expr: RuleExpr::Choice(vec![
-            RuleExpr::RuleRef("function".into()),
-            RuleExpr::RuleRef("struct_def".into()),
-            RuleExpr::RuleRef("impl_block".into()),
-        ]),
-        fields: vec![],
-    });
+    g.add_rule(
+        "item",
+        Rule {
+            name: "item".into(),
+            expr: RuleExpr::Choice(vec![
+                RuleExpr::RuleRef("function".into()),
+                RuleExpr::RuleRef("struct_def".into()),
+                RuleExpr::RuleRef("impl_block".into()),
+            ]),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("function", Rule {
-        name: "function".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::Optional(Box::new(RuleExpr::Literal("pub".into()))),
-            RuleExpr::Literal("fn".into()),
-            RuleExpr::RuleRef("Identifier".into()),
-            RuleExpr::Literal("(".into()),
-            RuleExpr::Optional(Box::new(RuleExpr::RuleRef("param_list".into()))),
-            RuleExpr::Literal(")".into()),
-            RuleExpr::Optional(Box::new(RuleExpr::Seq(vec![
-                RuleExpr::Literal("->".into()),
+    g.add_rule(
+        "function",
+        Rule {
+            name: "function".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::Optional(Box::new(RuleExpr::Literal("pub".into()))),
+                RuleExpr::Literal("fn".into()),
                 RuleExpr::RuleRef("Identifier".into()),
-            ]))),
-            RuleExpr::RuleRef("block".into()),
-        ]),
-        fields: vec![],
-    });
+                RuleExpr::Literal("(".into()),
+                RuleExpr::Optional(Box::new(RuleExpr::RuleRef("param_list".into()))),
+                RuleExpr::Literal(")".into()),
+                RuleExpr::Optional(Box::new(RuleExpr::Seq(vec![
+                    RuleExpr::Literal("->".into()),
+                    RuleExpr::RuleRef("Identifier".into()),
+                ]))),
+                RuleExpr::RuleRef("block".into()),
+            ]),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("struct_def", Rule {
-        name: "struct_def".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::Optional(Box::new(RuleExpr::Literal("pub".into()))),
-            RuleExpr::Literal("struct".into()),
-            RuleExpr::RuleRef("Identifier".into()),
-            RuleExpr::Literal("{".into()),
-            RuleExpr::Optional(Box::new(RuleExpr::RuleRef("field_list".into()))),
-            RuleExpr::Literal("}".into()),
-        ]),
-        fields: vec![],
-    });
+    g.add_rule(
+        "struct_def",
+        Rule {
+            name: "struct_def".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::Optional(Box::new(RuleExpr::Literal("pub".into()))),
+                RuleExpr::Literal("struct".into()),
+                RuleExpr::RuleRef("Identifier".into()),
+                RuleExpr::Literal("{".into()),
+                RuleExpr::Optional(Box::new(RuleExpr::RuleRef("field_list".into()))),
+                RuleExpr::Literal("}".into()),
+            ]),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("impl_block", Rule {
-        name: "impl_block".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::Literal("impl".into()),
-            RuleExpr::RuleRef("Identifier".into()),
-            RuleExpr::Literal("{".into()),
-            RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("function".into()))),
-            RuleExpr::Literal("}".into()),
-        ]),
-        fields: vec![],
-    });
+    g.add_rule(
+        "impl_block",
+        Rule {
+            name: "impl_block".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::Literal("impl".into()),
+                RuleExpr::RuleRef("Identifier".into()),
+                RuleExpr::Literal("{".into()),
+                RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("function".into()))),
+                RuleExpr::Literal("}".into()),
+            ]),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("block", Rule {
-        name: "block".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::Literal("{".into()),
-            RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("statement".into()))),
-            RuleExpr::Literal("}".into()),
-        ]),
-        fields: vec![],
-    });
+    g.add_rule(
+        "block",
+        Rule {
+            name: "block".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::Literal("{".into()),
+                RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("statement".into()))),
+                RuleExpr::Literal("}".into()),
+            ]),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("statement", Rule {
-        name: "statement".into(),
-        expr: RuleExpr::Choice(vec![
-            RuleExpr::RuleRef("let_stmt".into()),
-            RuleExpr::RuleRef("return_stmt".into()),
-            RuleExpr::RuleRef("expr_stmt".into()),
-        ]),
-        fields: vec![],
-    });
+    g.add_rule(
+        "statement",
+        Rule {
+            name: "statement".into(),
+            expr: RuleExpr::Choice(vec![
+                RuleExpr::RuleRef("let_stmt".into()),
+                RuleExpr::RuleRef("return_stmt".into()),
+                RuleExpr::RuleRef("expr_stmt".into()),
+            ]),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("let_stmt", Rule {
-        name: "let_stmt".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::Literal("let".into()),
-            RuleExpr::Optional(Box::new(RuleExpr::Literal("mut".into()))),
-            RuleExpr::RuleRef("Identifier".into()),
-            RuleExpr::Optional(Box::new(RuleExpr::Seq(vec![
-                RuleExpr::Literal("=".into()),
+    g.add_rule(
+        "let_stmt",
+        Rule {
+            name: "let_stmt".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::Literal("let".into()),
+                RuleExpr::Optional(Box::new(RuleExpr::Literal("mut".into()))),
+                RuleExpr::RuleRef("Identifier".into()),
+                RuleExpr::Optional(Box::new(RuleExpr::Seq(vec![
+                    RuleExpr::Literal("=".into()),
+                    RuleExpr::RuleRef("expression".into()),
+                ]))),
+                RuleExpr::Literal(";".into()),
+            ]),
+            fields: vec![],
+        },
+    );
+
+    g.add_rule(
+        "return_stmt",
+        Rule {
+            name: "return_stmt".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::Literal("return".into()),
+                RuleExpr::Optional(Box::new(RuleExpr::RuleRef("expression".into()))),
+                RuleExpr::Literal(";".into()),
+            ]),
+            fields: vec![],
+        },
+    );
+
+    g.add_rule(
+        "expr_stmt",
+        Rule {
+            name: "expr_stmt".into(),
+            expr: RuleExpr::Seq(vec![
                 RuleExpr::RuleRef("expression".into()),
-            ]))),
-            RuleExpr::Literal(";".into()),
-        ]),
-        fields: vec![],
-    });
+                RuleExpr::Literal(";".into()),
+            ]),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("return_stmt", Rule {
-        name: "return_stmt".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::Literal("return".into()),
-            RuleExpr::Optional(Box::new(RuleExpr::RuleRef("expression".into()))),
-            RuleExpr::Literal(";".into()),
-        ]),
-        fields: vec![],
-    });
+    g.add_rule(
+        "expression",
+        Rule {
+            name: "expression".into(),
+            expr: RuleExpr::Choice(vec![
+                RuleExpr::RuleRef("String".into()),
+                RuleExpr::RuleRef("Integer".into()),
+                RuleExpr::RuleRef("Float".into()),
+                RuleExpr::RuleRef("Identifier".into()),
+            ]),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("expr_stmt", Rule {
-        name: "expr_stmt".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::RuleRef("expression".into()),
-            RuleExpr::Literal(";".into()),
-        ]),
-        fields: vec![],
-    });
-
-    g.add_rule("expression", Rule {
-        name: "expression".into(),
-        expr: RuleExpr::Choice(vec![
-            RuleExpr::RuleRef("String".into()),
-            RuleExpr::RuleRef("Integer".into()),
-            RuleExpr::RuleRef("Float".into()),
-            RuleExpr::RuleRef("Identifier".into()),
-        ]),
-        fields: vec![],
-    });
-
-    g.add_rule("param_list", Rule {
-        name: "param_list".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::RuleRef("param".into()),
-            RuleExpr::Repeat(Box::new(RuleExpr::Seq(vec![
-                RuleExpr::Literal(",".into()),
+    g.add_rule(
+        "param_list",
+        Rule {
+            name: "param_list".into(),
+            expr: RuleExpr::Seq(vec![
                 RuleExpr::RuleRef("param".into()),
-            ]))),
-        ]),
-        fields: vec![],
-    });
+                RuleExpr::Repeat(Box::new(RuleExpr::Seq(vec![
+                    RuleExpr::Literal(",".into()),
+                    RuleExpr::RuleRef("param".into()),
+                ]))),
+            ]),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("param", Rule {
-        name: "param".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::RuleRef("Identifier".into()),
-            RuleExpr::Literal(":".into()),
-            RuleExpr::RuleRef("Identifier".into()),
-        ]),
-        fields: vec![],
-    });
+    g.add_rule(
+        "param",
+        Rule {
+            name: "param".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::RuleRef("Identifier".into()),
+                RuleExpr::Literal(":".into()),
+                RuleExpr::RuleRef("Identifier".into()),
+            ]),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("field_list", Rule {
-        name: "field_list".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::RuleRef("field".into()),
-            RuleExpr::Repeat(Box::new(RuleExpr::Seq(vec![
-                RuleExpr::Literal(",".into()),
+    g.add_rule(
+        "field_list",
+        Rule {
+            name: "field_list".into(),
+            expr: RuleExpr::Seq(vec![
                 RuleExpr::RuleRef("field".into()),
-            ]))),
-        ]),
-        fields: vec![],
-    });
+                RuleExpr::Repeat(Box::new(RuleExpr::Seq(vec![
+                    RuleExpr::Literal(",".into()),
+                    RuleExpr::RuleRef("field".into()),
+                ]))),
+            ]),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("field", Rule {
-        name: "field".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::Optional(Box::new(RuleExpr::Literal("pub".into()))),
-            RuleExpr::RuleRef("Identifier".into()),
-            RuleExpr::Literal(":".into()),
-            RuleExpr::RuleRef("Identifier".into()),
-        ]),
-        fields: vec![],
-    });
+    g.add_rule(
+        "field",
+        Rule {
+            name: "field".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::Optional(Box::new(RuleExpr::Literal("pub".into()))),
+                RuleExpr::RuleRef("Identifier".into()),
+                RuleExpr::Literal(":".into()),
+                RuleExpr::RuleRef("Identifier".into()),
+            ]),
+            fields: vec![],
+        },
+    );
 
     g
 }
@@ -627,62 +735,80 @@ fn build_rust_grammar() -> Grammar {
 fn build_css_grammar() -> Grammar {
     let mut g = Grammar::new("css");
 
-    g.add_rule("source_file", Rule {
-        name: "source_file".into(),
-        expr: RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("rule_set".into()))),
-        fields: vec![],
-    });
+    g.add_rule(
+        "source_file",
+        Rule {
+            name: "source_file".into(),
+            expr: RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("rule_set".into()))),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("rule_set", Rule {
-        name: "rule_set".into(),
-        expr: RuleExpr::Choice(vec![
-            RuleExpr::RuleRef("at_rule".into()),
-            RuleExpr::RuleRef("style_rule".into()),
-        ]),
-        fields: vec![],
-    });
+    g.add_rule(
+        "rule_set",
+        Rule {
+            name: "rule_set".into(),
+            expr: RuleExpr::Choice(vec![
+                RuleExpr::RuleRef("at_rule".into()),
+                RuleExpr::RuleRef("style_rule".into()),
+            ]),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("style_rule", Rule {
-        name: "style_rule".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::RuleRef("selector".into()),
-            RuleExpr::Literal("{".into()),
-            RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("declaration".into()))),
-            RuleExpr::Literal("}".into()),
-        ]),
-        fields: vec![],
-    });
+    g.add_rule(
+        "style_rule",
+        Rule {
+            name: "style_rule".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::RuleRef("selector".into()),
+                RuleExpr::Literal("{".into()),
+                RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("declaration".into()))),
+                RuleExpr::Literal("}".into()),
+            ]),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("at_rule", Rule {
-        name: "at_rule".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::RuleRef("Identifier".into()),
-            RuleExpr::Literal("(".into()),
-            RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("Identifier".into()))),
-            RuleExpr::Literal(")".into()),
-            RuleExpr::Literal("{".into()),
-            RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("style_rule".into()))),
-            RuleExpr::Literal("}".into()),
-        ]),
-        fields: vec![],
-    });
+    g.add_rule(
+        "at_rule",
+        Rule {
+            name: "at_rule".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::RuleRef("Identifier".into()),
+                RuleExpr::Literal("(".into()),
+                RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("Identifier".into()))),
+                RuleExpr::Literal(")".into()),
+                RuleExpr::Literal("{".into()),
+                RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("style_rule".into()))),
+                RuleExpr::Literal("}".into()),
+            ]),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("selector", Rule {
-        name: "selector".into(),
-        expr: RuleExpr::RuleRef("Identifier".into()),
-        fields: vec![],
-    });
+    g.add_rule(
+        "selector",
+        Rule {
+            name: "selector".into(),
+            expr: RuleExpr::RuleRef("Identifier".into()),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("declaration", Rule {
-        name: "declaration".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::RuleRef("Identifier".into()),
-            RuleExpr::Literal(":".into()),
-            RuleExpr::RuleRef("Identifier".into()),
-            RuleExpr::Literal(";".into()),
-        ]),
-        fields: vec![],
-    });
+    g.add_rule(
+        "declaration",
+        Rule {
+            name: "declaration".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::RuleRef("Identifier".into()),
+                RuleExpr::Literal(":".into()),
+                RuleExpr::RuleRef("Identifier".into()),
+                RuleExpr::Literal(";".into()),
+            ]),
+            fields: vec![],
+        },
+    );
 
     g
 }
@@ -697,99 +823,126 @@ fn build_python_grammar() -> Grammar {
     g.add_keyword("return");
     g.add_keyword("self");
 
-    g.add_rule("source_file", Rule {
-        name: "source_file".into(),
-        expr: RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("statement".into()))),
-        fields: vec![],
-    });
+    g.add_rule(
+        "source_file",
+        Rule {
+            name: "source_file".into(),
+            expr: RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("statement".into()))),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("statement", Rule {
-        name: "statement".into(),
-        expr: RuleExpr::Choice(vec![
-            RuleExpr::RuleRef("function_def".into()),
-            RuleExpr::RuleRef("class_def".into()),
-            RuleExpr::RuleRef("assignment".into()),
-            RuleExpr::RuleRef("return_stmt".into()),
-            RuleExpr::RuleRef("expr_stmt".into()),
-        ]),
-        fields: vec![],
-    });
+    g.add_rule(
+        "statement",
+        Rule {
+            name: "statement".into(),
+            expr: RuleExpr::Choice(vec![
+                RuleExpr::RuleRef("function_def".into()),
+                RuleExpr::RuleRef("class_def".into()),
+                RuleExpr::RuleRef("assignment".into()),
+                RuleExpr::RuleRef("return_stmt".into()),
+                RuleExpr::RuleRef("expr_stmt".into()),
+            ]),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("function_def", Rule {
-        name: "function_def".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::Literal("def".into()),
-            RuleExpr::RuleRef("Identifier".into()),
-            RuleExpr::Literal("(".into()),
-            RuleExpr::Optional(Box::new(RuleExpr::RuleRef("param_list".into()))),
-            RuleExpr::Literal(")".into()),
-            RuleExpr::Literal(":".into()),
-        ]),
-        fields: vec![],
-    });
-
-    g.add_rule("class_def", Rule {
-        name: "class_def".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::Literal("class".into()),
-            RuleExpr::RuleRef("Identifier".into()),
-            RuleExpr::Optional(Box::new(RuleExpr::Seq(vec![
+    g.add_rule(
+        "function_def",
+        Rule {
+            name: "function_def".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::Literal("def".into()),
+                RuleExpr::RuleRef("Identifier".into()),
                 RuleExpr::Literal("(".into()),
                 RuleExpr::Optional(Box::new(RuleExpr::RuleRef("param_list".into()))),
                 RuleExpr::Literal(")".into()),
-            ]))),
-            RuleExpr::Literal(":".into()),
-        ]),
-        fields: vec![],
-    });
+                RuleExpr::Literal(":".into()),
+            ]),
+            fields: vec![],
+        },
+    );
 
-    g.add_rule("assignment", Rule {
-        name: "assignment".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::RuleRef("Identifier".into()),
-            RuleExpr::Literal("=".into()),
-            RuleExpr::RuleRef("expression".into()),
-        ]),
-        fields: vec![],
-    });
-
-    g.add_rule("return_stmt", Rule {
-        name: "return_stmt".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::Literal("return".into()),
-            RuleExpr::Optional(Box::new(RuleExpr::RuleRef("expression".into()))),
-        ]),
-        fields: vec![],
-    });
-
-    g.add_rule("expr_stmt", Rule {
-        name: "expr_stmt".into(),
-        expr: RuleExpr::RuleRef("expression".into()),
-        fields: vec![],
-    });
-
-    g.add_rule("expression", Rule {
-        name: "expression".into(),
-        expr: RuleExpr::Choice(vec![
-            RuleExpr::RuleRef("String".into()),
-            RuleExpr::RuleRef("Integer".into()),
-            RuleExpr::RuleRef("Float".into()),
-            RuleExpr::RuleRef("Identifier".into()),
-        ]),
-        fields: vec![],
-    });
-
-    g.add_rule("param_list", Rule {
-        name: "param_list".into(),
-        expr: RuleExpr::Seq(vec![
-            RuleExpr::RuleRef("Identifier".into()),
-            RuleExpr::Repeat(Box::new(RuleExpr::Seq(vec![
-                RuleExpr::Literal(",".into()),
+    g.add_rule(
+        "class_def",
+        Rule {
+            name: "class_def".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::Literal("class".into()),
                 RuleExpr::RuleRef("Identifier".into()),
-            ]))),
-        ]),
-        fields: vec![],
-    });
+                RuleExpr::Optional(Box::new(RuleExpr::Seq(vec![
+                    RuleExpr::Literal("(".into()),
+                    RuleExpr::Optional(Box::new(RuleExpr::RuleRef("param_list".into()))),
+                    RuleExpr::Literal(")".into()),
+                ]))),
+                RuleExpr::Literal(":".into()),
+            ]),
+            fields: vec![],
+        },
+    );
+
+    g.add_rule(
+        "assignment",
+        Rule {
+            name: "assignment".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::RuleRef("Identifier".into()),
+                RuleExpr::Literal("=".into()),
+                RuleExpr::RuleRef("expression".into()),
+            ]),
+            fields: vec![],
+        },
+    );
+
+    g.add_rule(
+        "return_stmt",
+        Rule {
+            name: "return_stmt".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::Literal("return".into()),
+                RuleExpr::Optional(Box::new(RuleExpr::RuleRef("expression".into()))),
+            ]),
+            fields: vec![],
+        },
+    );
+
+    g.add_rule(
+        "expr_stmt",
+        Rule {
+            name: "expr_stmt".into(),
+            expr: RuleExpr::RuleRef("expression".into()),
+            fields: vec![],
+        },
+    );
+
+    g.add_rule(
+        "expression",
+        Rule {
+            name: "expression".into(),
+            expr: RuleExpr::Choice(vec![
+                RuleExpr::RuleRef("String".into()),
+                RuleExpr::RuleRef("Integer".into()),
+                RuleExpr::RuleRef("Float".into()),
+                RuleExpr::RuleRef("Identifier".into()),
+            ]),
+            fields: vec![],
+        },
+    );
+
+    g.add_rule(
+        "param_list",
+        Rule {
+            name: "param_list".into(),
+            expr: RuleExpr::Seq(vec![
+                RuleExpr::RuleRef("Identifier".into()),
+                RuleExpr::Repeat(Box::new(RuleExpr::Seq(vec![
+                    RuleExpr::Literal(",".into()),
+                    RuleExpr::RuleRef("Identifier".into()),
+                ]))),
+            ]),
+            fields: vec![],
+        },
+    );
 
     g
 }
@@ -837,7 +990,13 @@ fn bench<F: FnMut()>(iterations: usize, mut f: F) -> BenchResult {
     let avg = total / iterations as u32;
     let median = times[times.len() / 2];
 
-    BenchResult { min, max, avg, median, iterations }
+    BenchResult {
+        min,
+        max,
+        avg,
+        median,
+        iterations,
+    }
 }
 
 // ─── Tree-sitter Helpers ────────────────────────────────────────────────────
@@ -921,30 +1080,55 @@ struct TableRow {
 }
 
 fn print_table(title: &str, rows: &[TableRow]) {
-    let col1_w = rows.iter().map(|r| r.test_name.len()).max().unwrap_or(15).max(15);
-    let col2_w = rows.iter().map(|r| r.ts_result.len()).max().unwrap_or(12).max(12);
-    let col3_w = rows.iter().map(|r| r.st_result.len()).max().unwrap_or(12).max(12);
-    let col4_w = rows.iter().map(|r| r.ratio.len()).max().unwrap_or(15).max(15);
+    let col1_w = rows
+        .iter()
+        .map(|r| r.test_name.len())
+        .max()
+        .unwrap_or(15)
+        .max(15);
+    let col2_w = rows
+        .iter()
+        .map(|r| r.ts_result.len())
+        .max()
+        .unwrap_or(12)
+        .max(12);
+    let col3_w = rows
+        .iter()
+        .map(|r| r.st_result.len())
+        .max()
+        .unwrap_or(12)
+        .max(12);
+    let col4_w = rows
+        .iter()
+        .map(|r| r.ratio.len())
+        .max()
+        .unwrap_or(15)
+        .max(15);
 
     let total_w = col1_w + col2_w + col3_w + col4_w + 7;
 
     println!();
     println!("╔{}╗", "═".repeat(total_w));
     let title_pad = (total_w.saturating_sub(title.len())) / 2;
-    println!("║{}{}{}║",
+    println!(
+        "║{}{}{}║",
         " ".repeat(title_pad),
         title,
         " ".repeat(total_w - title_pad - title.len())
     );
-    println!("╠{}╤{}╤{}╤{}╣",
+    println!(
+        "╠{}╤{}╤{}╤{}╣",
         "═".repeat(col1_w + 1),
         "═".repeat(col2_w + 2),
         "═".repeat(col3_w + 2),
         "═".repeat(col4_w + 2)
     );
-    println!("║ {:<col1_w$}│ {:<col2_w$} │ {:<col3_w$} │ {:<col4_w$} ║",
-        "Test", "Tree-sitter", "SemTree", "Ratio (ST/TS)");
-    println!("╠{}╪{}╪{}╪{}╣",
+    println!(
+        "║ {:<col1_w$}│ {:<col2_w$} │ {:<col3_w$} │ {:<col4_w$} ║",
+        "Test", "Tree-sitter", "SemTree", "Ratio (ST/TS)"
+    );
+    println!(
+        "╠{}╪{}╪{}╪{}╣",
         "═".repeat(col1_w + 1),
         "═".repeat(col2_w + 2),
         "═".repeat(col3_w + 2),
@@ -952,11 +1136,14 @@ fn print_table(title: &str, rows: &[TableRow]) {
     );
 
     for row in rows {
-        println!("║ {:<col1_w$}│ {:<col2_w$} │ {:<col3_w$} │ {:<col4_w$} ║",
-            row.test_name, row.ts_result, row.st_result, row.ratio);
+        println!(
+            "║ {:<col1_w$}│ {:<col2_w$} │ {:<col3_w$} │ {:<col4_w$} ║",
+            row.test_name, row.ts_result, row.st_result, row.ratio
+        );
     }
 
-    println!("╚{}╧{}╧{}╧{}╝",
+    println!(
+        "╚{}╧{}╧{}╧{}╝",
         "═".repeat(col1_w + 1),
         "═".repeat(col2_w + 2),
         "═".repeat(col3_w + 2),
@@ -965,32 +1152,37 @@ fn print_table(title: &str, rows: &[TableRow]) {
 }
 
 fn print_single_table(title: &str, rows: &[(String, String)]) {
-    let col1_w = rows.iter().map(|(n, _)| n.len()).max().unwrap_or(20).max(20);
-    let col2_w = rows.iter().map(|(_, v)| v.len()).max().unwrap_or(20).max(20);
+    let col1_w = rows
+        .iter()
+        .map(|(n, _)| n.len())
+        .max()
+        .unwrap_or(20)
+        .max(20);
+    let col2_w = rows
+        .iter()
+        .map(|(_, v)| v.len())
+        .max()
+        .unwrap_or(20)
+        .max(20);
 
     let total_w = col1_w + col2_w + 3;
 
     println!();
     println!("╔{}╗", "═".repeat(total_w));
     let title_pad = (total_w.saturating_sub(title.len())) / 2;
-    println!("║{}{}{}║",
+    println!(
+        "║{}{}{}║",
         " ".repeat(title_pad),
         title,
         " ".repeat(total_w - title_pad - title.len())
     );
-    println!("╠{}╤{}╣",
-        "═".repeat(col1_w + 1),
-        "═".repeat(col2_w + 2)
-    );
+    println!("╠{}╤{}╣", "═".repeat(col1_w + 1), "═".repeat(col2_w + 2));
 
     for (name, value) in rows {
         println!("║ {:<col1_w$}│ {:<col2_w$} ║", name, value);
     }
 
-    println!("╚{}╧{}╝",
-        "═".repeat(col1_w + 1),
-        "═".repeat(col2_w + 2)
-    );
+    println!("╚{}╧{}╝", "═".repeat(col1_w + 1), "═".repeat(col2_w + 2));
 }
 
 fn ratio_f64(st: &BenchResult, ts: &BenchResult) -> f64 {
@@ -1047,12 +1239,16 @@ fn run_cold_parse_benchmarks(langs: &[LangBench], iterations: usize) -> Vec<Tabl
 
             rows.push(TableRow {
                 test_name: format!("{} {} cold", lang.name, size_name),
-                ts_result: format!("{} ({:.0} MB/s)",
+                ts_result: format!(
+                    "{} ({:.0} MB/s)",
                     format_duration(ts_result.median),
-                    ts_result.throughput_mbs(actual_size)),
-                st_result: format!("{} ({:.0} MB/s)",
+                    ts_result.throughput_mbs(actual_size)
+                ),
+                st_result: format!(
+                    "{} ({:.0} MB/s)",
                     format_duration(st_result.median),
-                    st_result.throughput_mbs(actual_size)),
+                    st_result.throughput_mbs(actual_size)
+                ),
                 ratio: ratio_string(&st_result, &ts_result),
             });
         }
@@ -1076,9 +1272,18 @@ fn run_incremental_benchmarks(langs: &[LangBench], iterations: usize) -> Vec<Tab
                 start_byte: insert_pos,
                 old_end_byte: insert_pos,
                 new_end_byte: insert_pos + 1,
-                start_position: tree_sitter::Point { row: 0, column: insert_pos },
-                old_end_position: tree_sitter::Point { row: 0, column: insert_pos },
-                new_end_position: tree_sitter::Point { row: 0, column: insert_pos + 1 },
+                start_position: tree_sitter::Point {
+                    row: 0,
+                    column: insert_pos,
+                },
+                old_end_position: tree_sitter::Point {
+                    row: 0,
+                    column: insert_pos,
+                },
+                new_end_position: tree_sitter::Point {
+                    row: 0,
+                    column: insert_pos + 1,
+                },
             };
             tree.edit(&edit);
 
@@ -1151,8 +1356,16 @@ fn run_traversal_benchmarks(langs: &[LangBench], iterations: usize) -> Vec<Table
 
         rows.push(TableRow {
             test_name: format!("{} traverse", lang.name),
-            ts_result: format!("{} ({} nodes)", format_duration(ts_result.median), ts_node_count),
-            st_result: format!("{} ({} nodes)", format_duration(st_result.median), st_node_count),
+            ts_result: format!(
+                "{} ({} nodes)",
+                format_duration(ts_result.median),
+                ts_node_count
+            ),
+            st_result: format!(
+                "{} ({} nodes)",
+                format_duration(st_result.median),
+                st_node_count
+            ),
             ratio: ratio_string(&st_result, &ts_result),
         });
     }
@@ -1184,9 +1397,15 @@ fn run_memory_benchmarks(langs: &[LangBench]) -> Vec<TableRow> {
             ts_result: format!("{} nodes (~{}KB)", ts_nodes, ts_estimated_bytes / 1024),
             st_result: format!("{} nodes (~{}KB)", st_nodes, st_estimated_bytes / 1024),
             ratio: if st_estimated_bytes > ts_estimated_bytes {
-                format!("{:.1}x more", st_estimated_bytes as f64 / ts_estimated_bytes as f64)
+                format!(
+                    "{:.1}x more",
+                    st_estimated_bytes as f64 / ts_estimated_bytes as f64
+                )
             } else {
-                format!("{:.1}x less", ts_estimated_bytes as f64 / st_estimated_bytes as f64)
+                format!(
+                    "{:.1}x less",
+                    ts_estimated_bytes as f64 / st_estimated_bytes as f64
+                )
             },
         });
     }
@@ -1525,9 +1744,19 @@ fn run_error_recovery_benchmarks(iterations: usize) -> (Vec<TableRow>, Vec<Table
 
         quality_rows.push(TableRow {
             test_name: case.name.to_string(),
-            ts_result: format!("{} nodes, {} errors, {}% valid", ts_nodes, ts_errors, ts_coverage),
-            st_result: format!("{} nodes, {} errors, {}% text", st_nodes, st_errors, st_coverage_pct),
-            ratio: if st_errors <= ts_errors { "SemTree ≤ errors".into() } else { "TS fewer errors".into() },
+            ts_result: format!(
+                "{} nodes, {} errors, {}% valid",
+                ts_nodes, ts_errors, ts_coverage
+            ),
+            st_result: format!(
+                "{} nodes, {} errors, {}% text",
+                st_nodes, st_errors, st_coverage_pct
+            ),
+            ratio: if st_errors <= ts_errors {
+                "SemTree ≤ errors".into()
+            } else {
+                "TS fewer errors".into()
+            },
         });
     }
 
@@ -1560,8 +1789,18 @@ fn run_detailed_memory_benchmarks(langs: &[LangBench]) -> Vec<TableRow> {
 
             rows.push(TableRow {
                 test_name: format!("{} {}", lang.name, size_name),
-                ts_result: format!("{} nodes, ~{}KB ({:.1}x src)", ts_nodes, ts_total / 1024, ts_ratio_to_src),
-                st_result: format!("{} nodes, ~{}KB ({:.1}x src)", st_nodes, st_total / 1024, st_ratio_to_src),
+                ts_result: format!(
+                    "{} nodes, ~{}KB ({:.1}x src)",
+                    ts_nodes,
+                    ts_total / 1024,
+                    ts_ratio_to_src
+                ),
+                st_result: format!(
+                    "{} nodes, ~{}KB ({:.1}x src)",
+                    st_nodes,
+                    st_total / 1024,
+                    st_ratio_to_src
+                ),
                 ratio: format!("{:.1}x src vs {:.1}x src", st_ratio_to_src, ts_ratio_to_src),
             });
         }
@@ -1585,7 +1824,9 @@ fn run_incremental_detail_benchmarks(langs: &[LangBench], iterations: usize) -> 
         ("delete line", |s: &str| {
             let lines: Vec<&str> = s.lines().collect();
             let mid = lines.len() / 2;
-            lines.iter().enumerate()
+            lines
+                .iter()
+                .enumerate()
                 .filter(|(i, _)| *i != mid)
                 .map(|(_, l)| *l)
                 .collect::<Vec<_>>()
@@ -1598,7 +1839,8 @@ fn run_incremental_detail_benchmarks(langs: &[LangBench], iterations: usize) -> 
         }),
     ];
 
-    for lang in langs.iter().take(2) { // JSON + JavaScript only for detail
+    for lang in langs.iter().take(2) {
+        // JSON + JavaScript only for detail
         let source = (lang.generate)(10_240);
 
         for &(edit_name, edit_fn) in edit_types {
@@ -1686,7 +1928,10 @@ fn main() {
     print!("Running incremental reparse benchmarks...");
     let incr_rows = run_incremental_benchmarks(&langs, iterations);
     println!(" done!");
-    print_table("2a. INCREMENTAL REPARSE: SemTree vs Tree-sitter (10KB)", &incr_rows);
+    print_table(
+        "2a. INCREMENTAL REPARSE: SemTree vs Tree-sitter (10KB)",
+        &incr_rows,
+    );
 
     print!("Running detailed incremental benchmarks...");
     let incr_detail = run_incremental_detail_benchmarks(&langs, iterations);
@@ -1704,13 +1949,19 @@ fn main() {
     let (err_speed, err_quality) = run_error_recovery_benchmarks(iterations);
     println!(" done!");
     print_table("4a. ERROR RECOVERY SPEED: Parsing Broken Code", &err_speed);
-    print_table("4b. ERROR RECOVERY QUALITY: Tree Completeness", &err_quality);
+    print_table(
+        "4b. ERROR RECOVERY QUALITY: Tree Completeness",
+        &err_quality,
+    );
 
     // ── 5. Tree Traversal ───────────────────────────────────────────────
     print!("Running tree traversal benchmarks...");
     let trav_rows = run_traversal_benchmarks(&langs, iterations);
     println!(" done!");
-    print_table("5. TREE TRAVERSAL: SemTree vs Tree-sitter (10KB)", &trav_rows);
+    print_table(
+        "5. TREE TRAVERSAL: SemTree vs Tree-sitter (10KB)",
+        &trav_rows,
+    );
 
     // ── 6. SemTree-only extras ──────────────────────────────────────────
     print!("Running SemTree-only benchmarks...");
@@ -1776,7 +2027,10 @@ fn print_computed_summary(parse_rows: &[TableRow], incr_rows: &[TableRow], mem_r
     }
 
     if let Some(first) = mem_rows.first() {
-        println!("  Memory (sample):       {} vs {}", first.st_result, first.ts_result);
+        println!(
+            "  Memory (sample):       {} vs {}",
+            first.st_result, first.ts_result
+        );
     }
     println!("  Error Recovery:        see tables above");
     println!("  Bonus Features:        semantic model, format, lint — TS has none built-in");

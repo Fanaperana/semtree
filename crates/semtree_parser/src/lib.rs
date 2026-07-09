@@ -1,9 +1,9 @@
 mod event;
+mod grammar;
 mod parser;
 mod sink;
-mod grammar;
 
-pub use parser::{Parser, ParseResult};
+pub use parser::{ParseResult, Parser};
 
 #[cfg(test)]
 mod tests;

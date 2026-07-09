@@ -1,10 +1,10 @@
+mod iter;
 pub mod node;
 mod token;
-mod iter;
 
-pub use node::{SyntaxNode, SyntaxElement};
-pub use token::SyntaxToken;
 pub use iter::{Preorder, PreorderEvent};
+pub use node::{SyntaxElement, SyntaxNode};
+pub use token::SyntaxToken;
 
 #[cfg(test)]
 mod tests;

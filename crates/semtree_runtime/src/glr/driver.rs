@@ -91,11 +91,13 @@ impl GlrParser {
         loop {
             if active.is_empty() {
                 // All stacks died — try error recovery.
-                if token_idx < tokens.len()
-                    && tokens[token_idx].kind != RuntimeTokenKind::Eof
-                {
+                if token_idx < tokens.len() && tokens[token_idx].kind != RuntimeTokenKind::Eof {
                     let recovery = GlrErrorRecovery::recover(
-                        &tokens, token_idx, &mut sppf, &mut gss, &self.table,
+                        &tokens,
+                        token_idx,
+                        &mut sppf,
+                        &mut gss,
+                        &self.table,
                     );
                     if let Some((new_active, new_idx, error)) = recovery {
                         active = new_active;
@@ -122,12 +124,12 @@ impl GlrParser {
                 let mut accepted = false;
                 for &gss_node in &active {
                     let state = gss.state_of(gss_node);
-                    if let Some(actions) = self.table.action.get(state) {
-                        if let Some(action_list) = actions.get(&Symbol::Eof) {
-                            for action in action_list {
-                                if *action == Action::Accept {
-                                    accepted = true;
-                                }
+                    if let Some(actions) = self.table.action.get(state)
+                        && let Some(action_list) = actions.get(&Symbol::Eof)
+                    {
+                        for action in action_list {
+                            if *action == Action::Accept {
+                                accepted = true;
                             }
                         }
                     }
@@ -154,20 +156,13 @@ impl GlrParser {
             let terminal = self.token_to_symbol(tok);
 
             // Phase 1: Perform all reductions.
-            let reduce_result =
-                self.perform_reductions(&active, &terminal, &mut gss, &mut sppf);
+            let reduce_result = self.perform_reductions(&active, &terminal, &mut gss, &mut sppf);
             active = reduce_result.new_active;
             ambiguity_count += reduce_result.ambiguities;
 
             // Phase 2: Perform shifts.
-            let shift_result = self.perform_shifts(
-                &active,
-                &terminal,
-                tok,
-                token_idx,
-                &mut gss,
-                &mut sppf,
-            );
+            let shift_result =
+                self.perform_shifts(&active, &terminal, tok, token_idx, &mut gss, &mut sppf);
 
             if shift_result.is_empty() {
                 // No shifts possible — error.
@@ -178,7 +173,11 @@ impl GlrParser {
                     });
 
                     let recovery = GlrErrorRecovery::recover(
-                        &tokens, token_idx, &mut sppf, &mut gss, &self.table,
+                        &tokens,
+                        token_idx,
+                        &mut sppf,
+                        &mut gss,
+                        &self.table,
                     );
                     if let Some((new_active, new_idx, error)) = recovery {
                         active = new_active;
@@ -262,12 +261,11 @@ impl GlrParser {
     fn check_accept(&self, active: &[GssNodeId], gss: &Gss) -> bool {
         for &node in active {
             let state = gss.state_of(node);
-            if let Some(actions) = self.table.action.get(state) {
-                if let Some(action_list) = actions.get(&Symbol::Eof) {
-                    if action_list.contains(&Action::Accept) {
-                        return true;
-                    }
-                }
+            if let Some(actions) = self.table.action.get(state)
+                && let Some(action_list) = actions.get(&Symbol::Eof)
+                && action_list.contains(&Action::Accept)
+            {
+                return true;
             }
         }
         false
@@ -315,8 +313,7 @@ impl GlrParser {
                         .max()
                         .unwrap_or(0);
                     let before = reduce_actions.len();
-                    reduce_actions
-                        .retain(|id| self.table.productions[*id].prec == max_prec);
+                    reduce_actions.retain(|id| self.table.productions[*id].prec == max_prec);
                     if reduce_actions.len() < before {
                         ambiguities += before - reduce_actions.len();
                     } else {
@@ -340,15 +337,11 @@ impl GlrParser {
                         let base_node = path[0].0;
                         let base_state = gss.state_of(base_node);
 
-                        let target_state = match self
-                            .table
-                            .goto
-                            .get(base_state)
-                            .and_then(|g| g.get(&lhs))
-                        {
-                            Some(&s) => s,
-                            None => continue,
-                        };
+                        let target_state =
+                            match self.table.goto.get(base_state).and_then(|g| g.get(&lhs)) {
+                                Some(&s) => s,
+                                None => continue,
+                            };
 
                         let sppf_children: Vec<SppfNodeId> = path
                             .iter()
@@ -374,12 +367,9 @@ impl GlrParser {
                             TextRange::new(start, end)
                         };
 
-                        let sppf_node =
-                            sppf.create_symbol(lhs.clone(), sppf_children, range);
+                        let sppf_node = sppf.create_symbol(lhs.clone(), sppf_children, range);
 
-                        if let Some(existing) =
-                            gss.find_node_with_state(target_state, &current)
-                        {
+                        if let Some(existing) = gss.find_node_with_state(target_state, &current) {
                             if gss.add_link(existing, base_node, sppf_node) {
                                 changed = true;
                             }
@@ -463,7 +453,7 @@ impl GlrParser {
 
     fn build_final_tree(
         &self,
-        source: &str,
+        _source: &str,
         tokens: &[RawToken],
         sppf: &Sppf,
         _gss: &Gss,
@@ -540,12 +530,7 @@ impl GlrParser {
         builder.finish()
     }
 
-    fn collect_sppf_events(
-        &self,
-        sppf: &Sppf,
-        id: SppfNodeId,
-        events: &mut Vec<SppfEvent>,
-    ) {
+    fn collect_sppf_events(&self, sppf: &Sppf, id: SppfNodeId, events: &mut Vec<SppfEvent>) {
         use crate::glr::sppf::SppfNodeKind;
         match sppf.get(id) {
             SppfNodeKind::Terminal {
@@ -553,9 +538,7 @@ impl GlrParser {
             } => {
                 events.push(SppfEvent::Token(*syntax_kind, text.clone()));
             }
-            SppfNodeKind::Symbol {
-                name, children, ..
-            } => {
+            SppfNodeKind::Symbol { name, children, .. } => {
                 events.push(SppfEvent::StartNode(name.clone()));
                 for &child in children {
                     self.collect_sppf_events(sppf, child, events);
@@ -578,6 +561,7 @@ impl GlrParser {
         }
     }
 
+    #[allow(dead_code)]
     fn emit_trivia_up_to(
         &self,
         tokens: &[RawToken],
@@ -606,7 +590,7 @@ impl GlrParser {
         }
     }
 
-    fn build_trivial_tree(&self, source: &str, tokens: &[RawToken]) -> GreenNode {
+    fn build_trivial_tree(&self, _source: &str, tokens: &[RawToken]) -> GreenNode {
         let mut builder = semtree_green::GreenNodeBuilder::new();
         builder.start_node(SyntaxKind::SOURCE_FILE);
         for tok in tokens {

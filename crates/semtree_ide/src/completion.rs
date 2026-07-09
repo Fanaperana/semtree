@@ -20,9 +20,8 @@ pub struct CompletionItem {
 }
 
 const KEYWORDS: &[&str] = &[
-    "fn", "let", "mut", "if", "else", "while", "for", "return",
-    "struct", "enum", "impl", "trait", "pub", "use", "mod", "match",
-    "const", "static", "type", "loop", "break", "continue",
+    "fn", "let", "mut", "if", "else", "while", "for", "return", "struct", "enum", "impl", "trait",
+    "pub", "use", "mod", "match", "const", "static", "type", "loop", "break", "continue",
 ];
 
 /// Provide completion suggestions at the given offset.
@@ -72,10 +71,10 @@ fn find_prefix(root: &SyntaxNode, offset: TextSize) -> String {
     if offset == TextSize::new(0) {
         return String::new();
     }
-    if let Some(tok) = root.token_at_offset(offset - TextSize::new(1)) {
-        if tok.kind() == SyntaxKind::IDENT {
-            return tok.text().to_string();
-        }
+    if let Some(tok) = root.token_at_offset(offset - TextSize::new(1))
+        && tok.kind() == SyntaxKind::IDENT
+    {
+        return tok.text().to_string();
     }
     String::new()
 }

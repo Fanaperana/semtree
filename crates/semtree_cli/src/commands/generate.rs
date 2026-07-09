@@ -5,8 +5,7 @@ use semtree_grammar::parse_semtree_dsl;
 
 pub fn generate(file: PathBuf, output: Option<PathBuf>) -> super::Result {
     let source = std::fs::read_to_string(&file)?;
-    let grammar = parse_semtree_dsl(&source)
-        .map_err(|e| format!("grammar parse error: {e}"))?;
+    let grammar = parse_semtree_dsl(&source).map_err(|e| format!("grammar parse error: {e}"))?;
 
     let code = generate_ast(&grammar);
 

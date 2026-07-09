@@ -34,7 +34,7 @@ pub fn validate_grammar(grammar: &Grammar) -> Vec<GrammarError> {
 fn check_undefined_refs(
     expr: &RuleExpr,
     grammar: &Grammar,
-    context_rule: &SmolStr,
+    _context_rule: &SmolStr,
     errors: &mut Vec<GrammarError>,
 ) {
     match expr {
@@ -45,7 +45,7 @@ fn check_undefined_refs(
         }
         RuleExpr::Seq(exprs) | RuleExpr::Choice(exprs) => {
             for e in exprs {
-                check_undefined_refs(e, grammar, context_rule, errors);
+                check_undefined_refs(e, grammar, _context_rule, errors);
             }
         }
         RuleExpr::Repeat(inner)
@@ -56,7 +56,7 @@ fn check_undefined_refs(
         | RuleExpr::PrecLeft(_, inner)
         | RuleExpr::PrecRight(_, inner)
         | RuleExpr::Field(_, inner) => {
-            check_undefined_refs(inner, grammar, context_rule, errors);
+            check_undefined_refs(inner, grammar, _context_rule, errors);
         }
         RuleExpr::Literal(_) | RuleExpr::Blank => {}
     }
@@ -241,7 +241,10 @@ mod tests {
     fn detects_undefined_rule() {
         let g = make_grammar(vec![("A", RuleExpr::RuleRef("B".into()))]);
         let errs = validate_grammar(&g);
-        assert!(errs.iter().any(|e| matches!(e, GrammarError::UndefinedRule(n) if n == "B")));
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, GrammarError::UndefinedRule(n) if n == "B"))
+        );
     }
 
     #[test]
@@ -249,7 +252,9 @@ mod tests {
         let g = make_grammar(vec![("A", RuleExpr::RuleRef("Identifier".into()))]);
         let errs = validate_grammar(&g);
         assert!(
-            !errs.iter().any(|e| matches!(e, GrammarError::UndefinedRule(_))),
+            !errs
+                .iter()
+                .any(|e| matches!(e, GrammarError::UndefinedRule(_))),
             "builtins should not be flagged"
         );
     }
@@ -261,7 +266,10 @@ mod tests {
             ("B", RuleExpr::RuleRef("A".into())),
         ]);
         let errs = validate_grammar(&g);
-        assert!(errs.iter().any(|e| matches!(e, GrammarError::CycleDetected(_))));
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, GrammarError::CycleDetected(_)))
+        );
     }
 
     #[test]
@@ -274,7 +282,9 @@ mod tests {
         ]);
         let errs = validate_grammar(&g);
         assert!(
-            !errs.iter().any(|e| matches!(e, GrammarError::CycleDetected(_))),
+            !errs
+                .iter()
+                .any(|e| matches!(e, GrammarError::CycleDetected(_))),
             "DAG should not report cycles"
         );
     }
@@ -286,7 +296,10 @@ mod tests {
             ("B", RuleExpr::Literal("y".into())),
         ]);
         let errs = validate_grammar(&g);
-        assert!(errs.iter().any(|e| matches!(e, GrammarError::UnreachableRule(n) if n == "B")));
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, GrammarError::UnreachableRule(n) if n == "B"))
+        );
     }
 
     #[test]
@@ -297,7 +310,9 @@ mod tests {
         ]);
         let errs = validate_grammar(&g);
         assert!(
-            !errs.iter().any(|e| matches!(e, GrammarError::UnreachableRule(_))),
+            !errs
+                .iter()
+                .any(|e| matches!(e, GrammarError::UnreachableRule(_))),
             "all rules reachable from A"
         );
     }
@@ -309,7 +324,10 @@ mod tests {
             RuleExpr::Choice(vec![RuleExpr::Literal("x".into()), RuleExpr::Blank]),
         )]);
         let errs = validate_grammar(&g);
-        assert!(errs.iter().any(|e| matches!(e, GrammarError::EmptyAlternative(n) if n == "A")));
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, GrammarError::EmptyAlternative(n) if n == "A"))
+        );
     }
 
     #[test]
@@ -322,6 +340,10 @@ mod tests {
             ]),
         )]);
         let errs = validate_grammar(&g);
-        assert!(!errs.iter().any(|e| matches!(e, GrammarError::EmptyAlternative(_))));
+        assert!(
+            !errs
+                .iter()
+                .any(|e| matches!(e, GrammarError::EmptyAlternative(_)))
+        );
     }
 }

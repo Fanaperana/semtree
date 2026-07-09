@@ -1,5 +1,5 @@
 use semtree_core::SyntaxKind;
-use semtree_red::{SyntaxNode, SyntaxElement};
+use semtree_red::{SyntaxElement, SyntaxNode};
 use semtree_semantic::SemanticModel;
 use text_size::TextRange;
 
@@ -140,7 +140,11 @@ fn classify_ident(tok: &semtree_red::SyntaxToken, model: &SemanticModel) -> Sema
             SymbolKind::Field => (SemanticTokenType::Property, Vec::new()),
             _ => (SemanticTokenType::Variable, Vec::new()),
         };
-        SemanticToken { range, token_type, modifiers }
+        SemanticToken {
+            range,
+            token_type,
+            modifiers,
+        }
     } else {
         SemanticToken {
             range,

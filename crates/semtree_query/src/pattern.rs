@@ -216,7 +216,10 @@ impl<'a> QueryParser<'a> {
                 self.advance();
                 Ok(())
             }
-            Some(c) => Err(format!("expected '{expected}', found '{c}' at position {}", self.pos)),
+            Some(c) => Err(format!(
+                "expected '{expected}', found '{c}' at position {}",
+                self.pos
+            )),
             None => Err(format!("expected '{expected}', found end of input")),
         }
     }

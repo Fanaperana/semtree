@@ -1,12 +1,17 @@
-pub mod semantic_tokens;
 pub mod completion;
-pub mod navigation;
 pub mod folding;
+pub mod navigation;
+pub mod semantic_tokens;
 
-pub use semantic_tokens::{SemanticToken, SemanticTokenType, SemanticTokenModifier, classify_tokens};
 pub use completion::{CompletionItem, CompletionKind, complete_at};
-pub use navigation::{goto_definition, find_references, document_symbols, hover_info, breadcrumbs, DocumentSymbol, HoverInfo, Breadcrumb};
-pub use folding::{FoldingRange, FoldingKind, folding_ranges};
+pub use folding::{FoldingKind, FoldingRange, folding_ranges};
+pub use navigation::{
+    Breadcrumb, DocumentSymbol, HoverInfo, breadcrumbs, document_symbols, find_references,
+    goto_definition, hover_info,
+};
+pub use semantic_tokens::{
+    SemanticToken, SemanticTokenModifier, SemanticTokenType, classify_tokens,
+};
 
 #[cfg(test)]
 mod tests;

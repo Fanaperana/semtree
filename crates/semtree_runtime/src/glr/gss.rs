@@ -31,6 +31,12 @@ pub struct Gss {
     generation: u32,
 }
 
+impl Default for Gss {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Gss {
     pub fn new() -> Self {
         Self {
@@ -81,12 +87,10 @@ impl Gss {
     /// Find an existing GSS node with the given state in the current active set,
     /// or None if no such node exists.
     pub fn find_node_with_state(&self, state: usize, active: &[GssNodeId]) -> Option<GssNodeId> {
-        for &id in active {
-            if self.nodes[id.0 as usize].state == state {
-                return Some(id);
-            }
-        }
-        None
+        active
+            .iter()
+            .find(|&&id| self.nodes[id.0 as usize].state == state)
+            .copied()
     }
 
     /// Advance generation counter (for incremental parsing).

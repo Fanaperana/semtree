@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use semtree_core::SyntaxKind;
 use semtree_parser::Parser;
 use semtree_query::engine::QueryEngine;
-use semtree_query::pattern::{parse_query, PatternNode, QueryPattern};
+use semtree_query::pattern::parse_query;
 
 pub fn query(file: PathBuf, pattern: String) -> super::Result {
     let source = std::fs::read_to_string(&file)?;
@@ -68,10 +68,7 @@ pub fn query(file: PathBuf, pattern: String) -> super::Result {
         }
         None => {
             let matches = QueryEngine::find_by_text(&root, &pattern);
-            println!(
-                "Found {} node(s) containing '{pattern}':\n",
-                matches.len()
-            );
+            println!("Found {} node(s) containing '{pattern}':\n", matches.len());
             for node in &matches {
                 let range = node.text_range();
                 println!(

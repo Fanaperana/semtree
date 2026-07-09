@@ -214,7 +214,12 @@ fn glr_produces_kind_names() {
     let parser = GlrParser::new(grammar);
     let result = parser.parse("fn main() {}");
     assert!(!result.kind_names.is_empty());
-    assert!(result.kind_names.values().any(|v| v.as_str() == "source_file"));
+    assert!(
+        result
+            .kind_names
+            .values()
+            .any(|v| v.as_str() == "source_file")
+    );
 }
 
 // ── GLR State Count Test ────────────────────────────────────

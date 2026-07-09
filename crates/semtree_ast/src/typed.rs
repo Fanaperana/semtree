@@ -1,5 +1,5 @@
 use semtree_core::SyntaxKind;
-use semtree_red::{SyntaxNode, SyntaxToken, SyntaxElement};
+use semtree_red::{SyntaxNode, SyntaxToken};
 
 /// Trait for typed AST nodes that wrap a `SyntaxNode`.
 ///

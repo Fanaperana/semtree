@@ -1,8 +1,8 @@
-mod rules;
 mod engine;
+mod rules;
 
 pub use engine::{LintEngine, LintResult};
-pub use rules::{LintRule, LintDiagnostic, LintSeverity};
+pub use rules::{LintDiagnostic, LintRule, LintSeverity};
 
 pub use rules::builtins;
 

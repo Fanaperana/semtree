@@ -1,10 +1,10 @@
-mod node;
 mod builder;
 mod cache;
+mod node;
 
-pub use node::{GreenNode, GreenElement, GreenToken, NodeOrToken};
-pub use builder::{GreenNodeBuilder, BuilderCheckpoint};
+pub use builder::{BuilderCheckpoint, GreenNodeBuilder};
 pub use cache::NodeCache;
+pub use node::{GreenElement, GreenNode, GreenToken, NodeOrToken};
 
 #[cfg(test)]
 mod tests;

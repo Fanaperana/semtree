@@ -103,10 +103,12 @@ impl SyntaxNode {
 
     /// Find a child token by kind.
     pub fn child_token(&self, kind: SyntaxKind) -> Option<SyntaxToken> {
-        self.children_with_tokens().into_iter().find_map(|e| match e {
-            SyntaxElement::Token(t) if t.kind() == kind => Some(t),
-            _ => None,
-        })
+        self.children_with_tokens()
+            .into_iter()
+            .find_map(|e| match e {
+                SyntaxElement::Token(t) if t.kind() == kind => Some(t),
+                _ => None,
+            })
     }
 
     /// Find a child node by kind.

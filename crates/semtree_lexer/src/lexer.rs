@@ -1,4 +1,4 @@
-use semtree_core::{SyntaxKind, SmolStr, Token, Trivia, TriviaKind};
+use semtree_core::{SmolStr, SyntaxKind, Token, Trivia, TriviaKind};
 use text_size::{TextRange, TextSize};
 
 use crate::cursor::Cursor;
@@ -141,21 +141,20 @@ impl<'src> Lexer<'src> {
     /// including) a newline.
     fn eat_trailing_trivia(&mut self) -> Vec<Trivia> {
         let mut trivia = Vec::new();
-        if let Some(c) = self.cursor.peek() {
-            if c.is_whitespace() && c != '\n' && c != '\r' {
-                let start = self.cursor.pos();
-                self.cursor
-                    .eat_while(|c| c.is_whitespace() && c != '\n' && c != '\r');
-                let end = self.cursor.pos();
-                trivia.push(Trivia {
-                    kind: TriviaKind::Whitespace,
-                    text: self.source[start..end].into(),
-                    range: TextRange::new(
-                        TextSize::new(start as u32),
-                        TextSize::new(end as u32),
-                    ),
-                });
-            }
+        if let Some(c) = self.cursor.peek()
+            && c.is_whitespace()
+            && c != '\n'
+            && c != '\r'
+        {
+            let start = self.cursor.pos();
+            self.cursor
+                .eat_while(|c| c.is_whitespace() && c != '\n' && c != '\r');
+            let end = self.cursor.pos();
+            trivia.push(Trivia {
+                kind: TriviaKind::Whitespace,
+                text: self.source[start..end].into(),
+                range: TextRange::new(TextSize::new(start as u32), TextSize::new(end as u32)),
+            });
         }
         if self.cursor.starts_with("//") {
             let start = self.cursor.pos();
@@ -164,10 +163,7 @@ impl<'src> Lexer<'src> {
             trivia.push(Trivia {
                 kind: TriviaKind::LineComment,
                 text: self.source[start..end].into(),
-                range: TextRange::new(
-                    TextSize::new(start as u32),
-                    TextSize::new(end as u32),
-                ),
+                range: TextRange::new(TextSize::new(start as u32), TextSize::new(end as u32)),
             });
         }
         trivia
