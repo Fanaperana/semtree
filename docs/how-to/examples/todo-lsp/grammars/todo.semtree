@@ -1,0 +1,25 @@
+language todo
+
+keyword todo
+keyword done
+keyword priority
+
+# Entry rule (first rule = root)
+# Items end with ';' so the parser can separate lines cleanly.
+Document :=
+    Item*
+
+Item :=
+    TodoItem | DoneItem
+
+TodoItem :=
+    "todo" Priority? Word+ ";"
+
+DoneItem :=
+    "done" Word+ ";"
+
+Priority :=
+    "priority" ":" Identifier
+
+Word :=
+    Identifier

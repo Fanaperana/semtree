@@ -24,6 +24,7 @@ members = [
 ]
 exclude = [
     "bindings/python",
+    "docs/how-to/examples/todo-lsp",
 ]
 resolver = "3"
 

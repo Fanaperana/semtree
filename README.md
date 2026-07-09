@@ -21,7 +21,7 @@
 
 *All from a single grammar definition.*
 
-[Getting Started](#quick-start) · [Benchmarks](#benchmarks-semtree-vs-tree-sitter) · [Neovim](#neovim-integration) · [Architecture](#architecture) · [Roadmap](ROADMAP.md)
+[Docs](docs/) · [Getting Started](#quick-start) · [Benchmarks](#benchmarks-semtree-vs-tree-sitter) · [Neovim](#neovim-integration) · [Architecture](#architecture) · [Roadmap](ROADMAP.md)
 
 </div>
 
@@ -104,6 +104,20 @@ cargo run -p semtree_bench --release -- 30    # quick run
 </details>
 
 ---
+
+## Documentation
+
+Full docs use the [Diátaxis](https://diataxis.fr/) structure:
+
+| Section | For |
+|---------|-----|
+| [Tutorials](docs/tutorials/) | First-time learning path |
+| [How-to guides](docs/how-to/) | CLI, grammars, Neovim LSP, any project |
+| [Reference](docs/reference/) | Complete DSL syntax + CLI flags |
+| [Explanation](docs/explanation/) | Architecture, RD vs GLR, vs Tree-sitter |
+
+Start at **[docs/README.md](docs/README.md)**.  
+Neovim LSP example: [`docs/how-to/examples/todo-lsp/`](docs/how-to/examples/todo-lsp/).
 
 ## Quick Start
 
