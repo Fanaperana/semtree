@@ -24,9 +24,27 @@ struct DocumentState {
 pub fn lsp(exe_dir: PathBuf) -> super::Result {
     let (connection, io_threads) = Connection::stdio();
     let caps = serde_json::to_value(server_capabilities())?;
-    let _init = connection
-        .initialize(caps)
-        .map_err(|e| format!("LSP init failed: {e:?}"))?;
+    let init_params = match connection.initialize(caps) {
+        Ok(params) => params,
+        Err(e) => {
+            // Client disconnected before completing handshake — not an error
+            if e.to_string().contains("disconnected") {
+                return Ok(());
+            }
+            return Err(format!("LSP init failed: {e:?}").into());
+        }
+    };
+
+    // Extract root_uri from initialization params to search for grammars
+    #[allow(deprecated)]
+    let root_path: Option<PathBuf> = serde_json::from_value::<lsp_types::InitializeParams>(init_params)
+        .ok()
+        .and_then(|params| {
+            params
+                .root_uri
+                .and_then(|uri| uri.as_str().strip_prefix("file://").map(|s| PathBuf::from(s)))
+                .or_else(|| params.root_path.map(PathBuf::from))
+        });
 
     let mut documents: HashMap<String, DocumentState> = HashMap::new();
 
@@ -39,13 +57,13 @@ pub fn lsp(exe_dir: PathBuf) -> super::Result {
                 handle_request(&connection, &documents, req)?;
             }
             Message::Notification(notif) => {
-                handle_notification(&connection, &mut documents, &exe_dir, notif)?;
+                handle_notification(&connection, &mut documents, &exe_dir, root_path.as_deref(), notif)?;
             }
             Message::Response(_) => {}
         }
     }
 
-    io_threads.join().unwrap();
+    io_threads.join().ok();
     Ok(())
 }
 
@@ -103,6 +121,7 @@ fn handle_notification(
     connection: &Connection,
     documents: &mut HashMap<String, DocumentState>,
     exe_dir: &Path,
+    root_path: Option<&Path>,
     notif: Notification,
 ) -> super::Result {
     match notif.method.as_str() {
@@ -112,8 +131,14 @@ fn handle_notification(
                 .map_err(|e| format!("{e:?}"))?;
             let uri = params.text_document.uri.clone();
             let key = uri_key(&uri);
-            open_document(documents, exe_dir, params)?;
-            publish_diagnostics(connection, documents, &key, &uri)?;
+            match open_document(documents, exe_dir, root_path, params) {
+                Ok(()) => {
+                    publish_diagnostics(connection, documents, &key, &uri)?;
+                }
+                Err(e) => {
+                    eprintln!("semtree-lsp: skipping document {key}: {e}");
+                }
+            }
         }
         "textDocument/didChange" => {
             let params: lsp_types::DidChangeTextDocumentParams = notif
@@ -138,12 +163,41 @@ fn handle_notification(
 fn open_document(
     documents: &mut HashMap<String, DocumentState>,
     exe_dir: &Path,
+    root_path: Option<&Path>,
     params: lsp_types::DidOpenTextDocumentParams,
 ) -> super::Result {
     let uri = params.text_document.uri;
     let key = uri_key(&uri);
     let path = uri_to_path(&uri)?;
-    let (_, grammar) = resolve_grammar(None, &path, exe_dir)?;
+
+    // Also search for grammars relative to workspace root
+    let grammar_result = resolve_grammar(None, &path, exe_dir)
+        .or_else(|e| {
+            if let Some(root) = root_path {
+                let grammars_in_root = root.join("grammars");
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                let grammar_name = match ext {
+                    "js" | "jsx" | "mjs" | "cjs" | "ts" | "tsx" => "javascript",
+                    "py" | "pyw" => "python",
+                    "rs" => "rust",
+                    "css" | "scss" | "less" => "css",
+                    "json" => "json",
+                    "toml" => "toml",
+                    _ => return Err(e),
+                };
+                let candidate = grammars_in_root.join(format!("{grammar_name}.semtree"));
+                if candidate.exists() {
+                    let grammar = super::grammar_util::load_grammar(&candidate)?;
+                    Ok((candidate, grammar))
+                } else {
+                    Err(e)
+                }
+            } else {
+                Err(e)
+            }
+        });
+
+    let (_, grammar) = grammar_result?;
     let mut session = ParseSession::new(grammar, ParserBackend::Auto);
     let result = session.parse(&params.text_document.text);
     documents.insert(

@@ -1,17 +1,30 @@
 --- Live incremental parsing via LSP and debounced CLI fallback.
 
+local util = require("semtree.util")
+
 local M = {}
 
 local ns_diag = vim.api.nvim_create_namespace("semtree_live")
 
---- @type table<number, {job: number|nil, timer: uv_timer_t|nil}>
+--- @type table<number, {generation: number}>
 M.buffers = {}
+
+--- @type boolean|nil
+M.lsp_supported = nil
 
 function M.setup(config)
     M.config = config
 
     if not config.live_parse then
         return
+    end
+
+    if not M.check_lsp_supported() then
+        vim.notify(
+            "SemTree: binary lacks 'lsp' subcommand — using CLI fallback. Reinstall: cargo install --path crates/semtree_cli --force",
+            vim.log.levels.WARN,
+            { once = true }
+        )
     end
 
     local augroup = vim.api.nvim_create_augroup("SemTreeLive", { clear = true })
@@ -39,8 +52,28 @@ function M.setup(config)
     })
 end
 
+--- Check once whether the installed binary supports `semtree lsp`.
+function M.check_lsp_supported()
+    if M.lsp_supported ~= nil then
+        return M.lsp_supported
+    end
+
+    local binary = M.config and M.config.binary_path or vim.fn.exepath("semtree")
+    if binary == "" then
+        M.lsp_supported = false
+        return false
+    end
+
+    M.lsp_supported = util.has_lsp_command(binary)
+    return M.lsp_supported
+end
+
 function M.ensure_lsp(buf)
-    if vim.lsp.get_clients({ bufnr = buf, name = "semtree" })[1] then
+    if not M.check_lsp_supported() then
+        return
+    end
+
+    if util.get_lsp_clients({ bufnr = buf, name = "semtree" })[1] then
         return
     end
 
@@ -49,12 +82,16 @@ function M.ensure_lsp(buf)
         return
     end
 
-    vim.lsp.start({
+    local root_dir = util.find_root(file) or util.file_dir(file)
+    if not root_dir or root_dir == "" then
+        return
+    end
+
+    pcall(vim.lsp.start, {
         name = "semtree",
         cmd = { M.config.binary_path, "lsp" },
-        root_dir = vim.fs.dirname(file),
-        attach = false,
-    })
+        root_dir = root_dir,
+    }, { bufnr = buf })
 end
 
 function M.schedule_parse(buf)
@@ -62,15 +99,20 @@ function M.schedule_parse(buf)
         return
     end
 
-    local state = M.buffers[buf] or {}
+    local state = M.buffers[buf] or { generation = 0 }
     M.buffers[buf] = state
 
-    if state.timer then
-        state.timer:stop()
-        state.timer:close()
-    end
+    state.generation = state.generation + 1
+    local gen = state.generation
 
-    state.timer = vim.defer_fn(function()
+    vim.defer_fn(function()
+        if not vim.api.nvim_buf_is_valid(buf) then
+            return
+        end
+        local current = M.buffers[buf]
+        if not current or current.generation ~= gen then
+            return
+        end
         M.parse_buffer_cli(buf)
     end, M.config.debounce_ms or 200)
 end
@@ -82,7 +124,7 @@ function M.parse_buffer_cli(buf)
         return
     end
 
-    if vim.lsp.get_clients({ bufnr = buf, name = "semtree" })[1] then
+    if util.get_lsp_clients({ bufnr = buf, name = "semtree" })[1] then
         return
     end
 

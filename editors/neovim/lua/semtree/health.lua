@@ -1,3 +1,5 @@
+local util = require("semtree.util")
+
 local M = {}
 
 function M.check()
@@ -9,6 +11,15 @@ function M.check()
     else
         vim.health.error("semtree binary not found", {
             "Install with: cargo install --path crates/semtree_cli",
+        })
+        return
+    end
+
+    if util.has_lsp_command(binary) then
+        vim.health.ok("LSP server available (semtree lsp)")
+    else
+        vim.health.warn("LSP subcommand missing — reinstall the binary", {
+            "cargo install --path crates/semtree_cli --force",
         })
     end
 

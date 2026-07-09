@@ -10,11 +10,11 @@ M.config = {
     debounce_ms = 200,
 }
 
-local inspector = require("semtree.inspector")
-local live = require("semtree.live")
-
 function M.setup(opts)
     M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+
+    local inspector = require("semtree.inspector")
+    local live = require("semtree.live")
 
     M.config.binary_path = M.config.binary_path or vim.fn.exepath("semtree")
     if M.config.binary_path == "" then
@@ -50,8 +50,15 @@ function M.setup(opts)
     end, {})
 
     vim.api.nvim_create_user_command("SemTreeLsp", function()
-        live.ensure_lsp(0)
-        vim.notify("SemTree LSP started", vim.log.levels.INFO)
+        if live.check_lsp_supported() then
+            live.ensure_lsp(0)
+            vim.notify("SemTree LSP started", vim.log.levels.INFO)
+        else
+            vim.notify(
+                "SemTree LSP unavailable. Reinstall: cargo install --path crates/semtree_cli --force",
+                vim.log.levels.ERROR
+            )
+        end
     end, {})
 
     live.setup(M.config)
