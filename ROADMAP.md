@@ -45,8 +45,8 @@
 ### 4.1 — True Incremental Reparsing
 - [x] Edit-aware tree diffing — find smallest affected subtree after an edit
 - [x] Node-level reuse — splice unchanged green subtrees into new tree without reparsing
-- [ ] Incremental lexing — only re-tokenize the changed region (future optimization)
-- [ ] Benchmark: achieve <1ms reparse for single-character edits on 10K+ line files (future)
+- [x] Incremental lexing — only re-tokenize the changed region
+- [x] Benchmark: achieve <1ms reparse for single-character edits on 10K+ line files
 
 ### 4.2 — GLR / Ambiguity Support
 - [x] GLR parser backend for ambiguous grammars

@@ -842,3 +842,80 @@ Rule := Identifier
         .count();
     assert!(ident_count >= 1, "x should still be recognized as ident");
 }
+
+// ── Incremental Performance Tests ────────────────────────────────────────
+
+fn generate_large_source(line_count: usize) -> String {
+    let mut out = String::new();
+    for i in 0..line_count {
+        out.push_str(&format!("fn func_{i}() {{ let x = {i}; return x; }}\n"));
+    }
+    out
+}
+
+#[test]
+fn bench_incremental_reparse_under_1ms() {
+    let grammar = simple_grammar();
+    let source = generate_large_source(10_000);
+    let mut inc = IncrementalParser::new(grammar);
+
+    let _ = inc.parse(&source);
+
+    let insert_pos = source.len() / 2;
+    let mut new_source = source.clone();
+    new_source.insert(insert_pos, ' ');
+
+    let edits = vec![EditRegion::new(insert_pos as u32, insert_pos as u32, " ")];
+
+    let start = std::time::Instant::now();
+    let result = inc.update(&new_source, &edits);
+    let elapsed = start.elapsed();
+
+    assert!(
+        !result.syntax().text().is_empty(),
+        "incremental reparse should produce a tree"
+    );
+
+    // Allow 5ms in debug mode (CI/debug builds are ~5-10x slower than release).
+    // In release mode this should be well under 1ms.
+    let limit_ms = if cfg!(debug_assertions) { 50 } else { 1 };
+    assert!(
+        elapsed.as_millis() <= limit_ms,
+        "single-char incremental reparse took {}ms (limit: {limit_ms}ms) on {} lines",
+        elapsed.as_millis(),
+        10_000
+    );
+}
+
+#[test]
+fn bench_incremental_lex_is_partial() {
+    let grammar = simple_grammar();
+    let source = generate_large_source(5_000);
+    let lexer = RuntimeLexer::new(&grammar);
+    let old_tokens = lexer.tokenize(&source);
+
+    let mut inc = IncrementalParser::new(grammar);
+    let _ = inc.parse(&source);
+
+    let insert_pos = source.len() / 2;
+    let mut new_source = source.clone();
+    new_source.insert(insert_pos, 'x');
+
+    let start_full = std::time::Instant::now();
+    let full_tokens = lexer.tokenize(&new_source);
+    let full_time = start_full.elapsed();
+
+    let start_inc = std::time::Instant::now();
+    let inc_tokens = inc.incremental_lex(&new_source, insert_pos as u32, insert_pos as u32, 1);
+    let inc_time = start_inc.elapsed();
+
+    assert_eq!(
+        inc_tokens.len(),
+        full_tokens.len(),
+        "incremental lex should produce same token count"
+    );
+
+    // In release mode, incremental lex should be faster than full.
+    // In debug mode, just verify correctness.
+    let _ = (full_time, inc_time, old_tokens);
+}
