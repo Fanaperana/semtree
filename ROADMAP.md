@@ -2,7 +2,7 @@
 
 > Universal Incremental Language Infrastructure — the platform that beats Tree-sitter.
 
-**Current status:** 19 crates, 52+ runtime tests passing, Phases 1–11 complete.
+**Current status:** 19 crates, 228 tests passing, Phases 1–11 complete.
 
 ---
 
@@ -21,8 +21,11 @@
 
 - [x] `semtree_runtime` — Grammar-driven runtime parser (Grammar IR → working parser)
 - [x] Runtime lexer — tokenize from grammar keywords/literals automatically
+- [x] Grammar-driven lexer — custom `token Name := /regex/` patterns in DSL
+- [x] INDENT/DEDENT tokenization for indentation-sensitive grammars
 - [x] Builder checkpointing — checkpoint/rollback for speculative backtracking
 - [x] Incremental reparsing — edit tracking, node reuse via green node cache
+- [x] Incremental parsing wired into CLI (`--incremental`, `--edit`)
 - [x] `semtree_query` — S-expression tree query engine with captures
 - [x] CLI `run` command — parse any file with any grammar
 - [x] CLI `query` command — query trees with S-expressions or kind names
@@ -46,10 +49,12 @@
 - [ ] Benchmark: achieve <1ms reparse for single-character edits on 10K+ line files (future)
 
 ### 4.2 — GLR / Ambiguity Support
-- [ ] GLR parser backend for ambiguous grammars (future)
+- [x] GLR parser backend for ambiguous grammars
 - [ ] Parser algorithm selection — auto-choose recursive descent, Pratt, or GLR per rule (future)
 - [x] Precedence/associativity fully wired through Grammar IR to runtime parser
 - [x] Left recursion detection with depth guard (direct left-recursive parsing TBD)
+- [x] Proper Kleene-star (Repeat) in GLR table generation via synthesized non-terminals
+- [x] Precedence-aware reduce/reduce conflict resolution in GLR driver
 
 ### 4.3 — Error Recovery (Production-Grade)
 - [x] Token-level error recovery — synchronize on statement/block boundaries
@@ -66,6 +71,8 @@
 - [ ] Parallel parsing — split large files into chunks (future optimization)
 - [ ] Memory benchmarks (future)
 - [x] Parse speed benchmarks — CLI `benchmark` with cold/warm/incremental/tree stats
+- [x] Benchmarks use shipped `grammars/*.semtree` (not inline toy grammars)
+- [x] Computed summary from actual run data (no hardcoded claims)
 
 ---
 
@@ -81,6 +88,8 @@
 - [x] JSON grammar with lossless parse tests
 - [x] TOML grammar with lossless parse tests
 - [x] Grammar test files (grammars/tests/)
+- [x] Python grammar with INDENT/DEDENT tokenization
+- [x] Corpus tests: JSON, TOML, Python, Rust, JavaScript, CSS against real files
 - [ ] Full Rust grammar (future — pass on rust-analyzer test corpus)
 - [ ] Full JavaScript/TypeScript grammar (future)
 - [ ] Full Python grammar (future)
@@ -249,7 +258,7 @@
 | Refactoring | None | Rename, extract, inline, tree edit |
 | Plugin system | None | Trait-based with registry |
 | C FFI | Built-in | Built-in (cdylib + staticlib) |
-| Languages | 200+ | JSON, TOML + Tree-sitter import |
+| Languages | 200+ | JSON, TOML, Python, Rust, JS, CSS + Tree-sitter import |
 
 ## Crate Summary (19 crates)
 
