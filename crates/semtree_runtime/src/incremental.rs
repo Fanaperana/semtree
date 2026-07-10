@@ -43,6 +43,51 @@ pub fn apply_edits(source: &str, edits: &[EditRegion]) -> String {
     result
 }
 
+/// How the most recent [`IncrementalParser::update`] produced its tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReuseKind {
+    /// Parsed from scratch (first parse, or `update` called with no prior tree
+    /// or no edits). Not an incremental attempt.
+    FullParse,
+    /// Reparsed a single inner subtree and spliced it back into the old tree.
+    DeepSplice,
+    /// Reused leading/trailing sibling subtrees; only the middle was reparsed.
+    SiblingSplice,
+    /// An incremental splice was attempted but the result did not match the
+    /// source (or no subtree could be reused), so a full reparse was used.
+    SpliceMiss,
+}
+
+/// Metrics describing the most recent [`IncrementalParser::update`].
+#[derive(Debug, Clone, Copy)]
+pub struct ReuseInfo {
+    pub kind: ReuseKind,
+    /// Total size of the new source, in bytes.
+    pub total_bytes: usize,
+    /// Bytes that had to be reparsed.
+    pub reparsed_bytes: usize,
+}
+
+impl ReuseInfo {
+    /// True when a subtree was actually reused (deep or sibling splice).
+    pub fn is_hit(&self) -> bool {
+        matches!(self.kind, ReuseKind::DeepSplice | ReuseKind::SiblingSplice)
+    }
+
+    /// Bytes that were reused (not reparsed).
+    pub fn reused_bytes(&self) -> usize {
+        self.total_bytes.saturating_sub(self.reparsed_bytes)
+    }
+
+    /// Fraction of the source that was reused, in `0.0..=1.0`.
+    pub fn reuse_ratio(&self) -> f64 {
+        if self.total_bytes == 0 {
+            return 0.0;
+        }
+        self.reused_bytes() as f64 / self.total_bytes as f64
+    }
+}
+
 /// An incremental parser that reuses unchanged subtrees and tokens across edits.
 ///
 /// The strategy:
@@ -59,6 +104,7 @@ pub struct IncrementalParser {
     prev_tree: Option<GreenNode>,
     prev_source: String,
     prev_tokens: Vec<RawToken>,
+    last_reuse: Option<ReuseInfo>,
 }
 
 impl IncrementalParser {
@@ -70,7 +116,15 @@ impl IncrementalParser {
             prev_tree: None,
             prev_source: String::new(),
             prev_tokens: Vec::new(),
+            last_reuse: None,
         }
+    }
+
+    /// Metrics for the most recent [`Self::update`] (or [`Self::parse`]) call,
+    /// describing whether a subtree was reused and how much was reparsed.
+    /// `None` before the first parse.
+    pub fn last_reuse(&self) -> Option<ReuseInfo> {
+        self.last_reuse
     }
 
     /// Full parse from scratch.
@@ -79,6 +133,11 @@ impl IncrementalParser {
         let result = self.parser.parse(source);
         self.prev_tree = Some(result.green_tree.clone());
         self.prev_source = source.to_string();
+        self.last_reuse = Some(ReuseInfo {
+            kind: ReuseKind::FullParse,
+            total_bytes: source.len(),
+            reparsed_bytes: source.len(),
+        });
         result
     }
 
@@ -99,7 +158,7 @@ impl IncrementalParser {
 
         // Try deep splice: walk into children recursively to find the smallest
         // subtree containing the edit, then reparse only that subtree.
-        if let Some(result) = self.try_deep_splice(
+        if let Some((result, reparsed_bytes)) = self.try_deep_splice(
             &old_root,
             new_source,
             affected_start,
@@ -109,6 +168,11 @@ impl IncrementalParser {
             self.prev_tree = Some(result.green_tree.clone());
             self.prev_source = new_source.to_string();
             self.prev_tokens = new_tokens;
+            self.last_reuse = Some(ReuseInfo {
+                kind: ReuseKind::DeepSplice,
+                total_bytes: new_source.len(),
+                reparsed_bytes,
+            });
             return result;
         }
 
@@ -141,12 +205,22 @@ impl IncrementalParser {
                 self.prev_tree = Some(result.green_tree.clone());
                 self.prev_source = new_source.to_string();
                 self.prev_tokens = new_tokens;
+                self.last_reuse = Some(ReuseInfo {
+                    kind: ReuseKind::SpliceMiss,
+                    total_bytes: new_source.len(),
+                    reparsed_bytes: new_source.len(),
+                });
                 return result;
             }
 
             self.prev_tree = Some(new_tree.clone());
             self.prev_source = new_source.to_string();
             self.prev_tokens = new_tokens;
+            self.last_reuse = Some(ReuseInfo {
+                kind: ReuseKind::SiblingSplice,
+                total_bytes: new_source.len(),
+                reparsed_bytes: reparse_end.saturating_sub(reparse_start),
+            });
 
             return RuntimeParseResult {
                 green_tree: new_tree,
@@ -159,11 +233,17 @@ impl IncrementalParser {
         self.prev_tree = Some(result.green_tree.clone());
         self.prev_source = new_source.to_string();
         self.prev_tokens = new_tokens;
+        self.last_reuse = Some(ReuseInfo {
+            kind: ReuseKind::SpliceMiss,
+            total_bytes: new_source.len(),
+            reparsed_bytes: new_source.len(),
+        });
         result
     }
 
     /// Try to narrow the reparse to a single child subtree that contains the edit.
     /// Operates on the green tree directly for O(n) child scan but O(1) tree construction.
+    /// On success returns the spliced result and the number of bytes reparsed.
     fn try_deep_splice(
         &self,
         root: &SyntaxNode,
@@ -171,7 +251,7 @@ impl IncrementalParser {
         affected_start: u32,
         affected_old_end: u32,
         delta: i64,
-    ) -> Option<RuntimeParseResult> {
+    ) -> Option<(RuntimeParseResult, usize)> {
         let green = root.green();
         let green_children = green.children();
         if green_children.len() < 2 {
@@ -245,11 +325,14 @@ impl IncrementalParser {
             }
         }
 
-        Some(RuntimeParseResult {
-            green_tree: new_tree,
-            errors: middle_result.errors,
-            kind_names: middle_result.kind_names,
-        })
+        Some((
+            RuntimeParseResult {
+                green_tree: new_tree,
+                errors: middle_result.errors,
+                kind_names: middle_result.kind_names,
+            },
+            reparse_region.len(),
+        ))
     }
 
     /// Incremental lexing: reuse prefix/suffix tokens, re-lex only the affected window.
@@ -475,6 +558,44 @@ StringLit :=
     }
 
     #[test]
+    fn last_reuse_tracks_full_parse_and_splice() {
+        let grammar = test_grammar();
+        let mut inc = IncrementalParser::new(grammar);
+
+        let src = "fn a() { let x = 1; }\nfn b() { let y = 2; }\n";
+        inc.parse(src);
+        let after_parse = inc.last_reuse().expect("last_reuse set after parse");
+        assert_eq!(after_parse.kind, ReuseKind::FullParse);
+        assert_eq!(after_parse.total_bytes, src.len());
+        assert_eq!(after_parse.reparsed_bytes, src.len());
+        assert_eq!(after_parse.reused_bytes(), 0);
+
+        // Append a whole new function at the end.
+        let appended = "fn c() { let z = 3; }\n";
+        let mut new_src = src.to_string();
+        new_src.push_str(appended);
+        let edit = EditRegion::new(src.len() as u32, src.len() as u32, appended);
+        let result = inc.update(&new_src, &[edit]);
+
+        // Losslessness: the incremental tree reproduces the new source exactly.
+        assert_eq!(SyntaxNode::new_root(result.green_tree).text(), new_src);
+
+        let info = inc.last_reuse().expect("last_reuse set after update");
+        assert_eq!(info.total_bytes, new_src.len());
+        assert!(info.reparsed_bytes <= info.total_bytes);
+        assert!((0.0..=1.0).contains(&info.reuse_ratio()));
+        assert!(
+            info.is_hit(),
+            "append at end should be a splice hit, got {:?}",
+            info.kind
+        );
+        assert!(
+            info.reused_bytes() > 0,
+            "expected some bytes reused, got {info:?}"
+        );
+    }
+
+    #[test]
     fn incremental_lex_reuses_prefix_suffix() {
         let grammar = test_grammar();
         let lexer = RuntimeLexer::new(&grammar);
@@ -488,6 +609,7 @@ StringLit :=
             prev_tree: None,
             prev_source: old_source.to_string(),
             prev_tokens: old_tokens.clone(),
+            last_reuse: None,
         };
 
         // Insert a space at position 18 (between "1" and ";")
@@ -526,6 +648,7 @@ StringLit :=
             prev_tree: None,
             prev_source: old_source.to_string(),
             prev_tokens: old_tokens,
+            last_reuse: None,
         };
 
         // Delete "42" -> ""
@@ -553,6 +676,7 @@ StringLit :=
             prev_tree: None,
             prev_source: old_source.to_string(),
             prev_tokens: old_tokens,
+            last_reuse: None,
         };
 
         // Replace "42" with "999"
@@ -581,6 +705,7 @@ StringLit :=
             prev_tree: None,
             prev_source: old_source.to_string(),
             prev_tokens: old_tokens,
+            last_reuse: None,
         };
 
         let new_source = "let fn foo() {}";
@@ -604,6 +729,7 @@ StringLit :=
             prev_tree: None,
             prev_source: old_source.to_string(),
             prev_tokens: old_tokens,
+            last_reuse: None,
         };
 
         let new_source = "fn foo() {} // end";

@@ -357,17 +357,21 @@ fn bench_incremental_case(
         let _ = full_parser.parse(edited);
     });
 
-    // ── Losslessness gate: incremental tree must reproduce the edited source ──
+    // ── Losslessness gate + reuse classification via the IncrementalParser API ──
     let mut check = IncrementalParser::new(grammar.clone());
     check.parse(source);
     let inc_text = check.update(edited, &edits).syntax().text();
     let ok = if inc_text == edited { "✓" } else { "✗ LOSSY" };
+    let reuse = match check.last_reuse() {
+        Some(r) => format!("{:?} {:.0}% reused", r.kind, r.reuse_ratio() * 100.0),
+        None => "?".to_string(),
+    };
 
     TableRow {
         test_name: format!("{} {edit_name}", lang.name),
         ts_result: format!("{} (edit+reparse)", format_duration(ts_result.median)),
         st_result: format!(
-            "{} inc / {} full [{ok}]",
+            "{} inc / {} full [{ok}] {reuse}",
             format_duration(st_result.median),
             format_duration(st_full.median)
         ),
