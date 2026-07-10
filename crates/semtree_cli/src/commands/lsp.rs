@@ -12,14 +12,12 @@ use lsp_types::{
     DocumentSymbolResponse, FoldingRange as LspFoldingRange, FoldingRangeKind, FoldingRangeParams,
     FoldingRangeProviderCapability, GotoDefinitionParams, GotoDefinitionResponse, Hover,
     HoverContents, HoverParams, HoverProviderCapability, Location, MarkupContent, MarkupKind,
-    OneOf, Position, Range, ReferenceParams, SemanticToken as LspSemanticToken,
-    SemanticTokenType as LspSemanticTokenType, SemanticTokens, SemanticTokensFullOptions,
-    SemanticTokensLegend, SemanticTokensOptions, SemanticTokensParams, SemanticTokensResult,
-    SemanticTokensServerCapabilities, ServerCapabilities, SymbolKind, TextDocumentSyncCapability,
+    OneOf, Position, Range, ReferenceParams, SemanticTokens, SemanticTokensParams,
+    SemanticTokensResult, ServerCapabilities, SymbolKind, TextDocumentSyncCapability,
     TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri,
 };
 use semtree_ide::{
-    classify_tokens as ide_classify, complete_at as ide_complete, document_symbols as ide_symbols,
+    complete_at as ide_complete, document_symbols as ide_symbols,
     find_references as ide_references, folding_ranges as ide_fold, goto_definition as ide_goto_def,
     hover_info as ide_hover,
 };
@@ -88,19 +86,6 @@ pub fn lsp(exe_dir: PathBuf) -> super::Result {
 }
 
 fn server_capabilities() -> ServerCapabilities {
-    let token_types = vec![
-        LspSemanticTokenType::KEYWORD,
-        LspSemanticTokenType::TYPE,
-        LspSemanticTokenType::FUNCTION,
-        LspSemanticTokenType::VARIABLE,
-        LspSemanticTokenType::STRING,
-        LspSemanticTokenType::NUMBER,
-        LspSemanticTokenType::COMMENT,
-        LspSemanticTokenType::OPERATOR,
-        LspSemanticTokenType::PARAMETER,
-        LspSemanticTokenType::PROPERTY,
-        LspSemanticTokenType::ENUM_MEMBER,
-    ];
     ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Options(
             TextDocumentSyncOptions {
@@ -119,17 +104,10 @@ fn server_capabilities() -> ServerCapabilities {
         references_provider: Some(OneOf::Left(true)),
         document_formatting_provider: Some(OneOf::Left(true)),
         folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
-        semantic_tokens_provider: Some(SemanticTokensServerCapabilities::SemanticTokensOptions(
-            SemanticTokensOptions {
-                legend: SemanticTokensLegend {
-                    token_types,
-                    token_modifiers: vec![],
-                },
-                full: Some(SemanticTokensFullOptions::Bool(true)),
-                range: None,
-                ..Default::default()
-            },
-        )),
+        // Semantic tokens disabled: the runtime parser currently emits all
+        // tokens as generic `identifier` kind, which produces incorrect
+        // classification that overrides the editor's native highlighting.
+        // TODO: re-enable once the runtime lexer distinguishes keyword/operator/literal kinds.
         ..Default::default()
     }
 }
@@ -255,21 +233,17 @@ fn handle_request(
                 .send(Message::Response(Response::new_ok(id, refs)))?;
         }
         "textDocument/semanticTokens/full" => {
-            let (id, params): (_, SemanticTokensParams) =
+            // Semantic tokens disabled — runtime parser doesn't distinguish token kinds yet.
+            let (id, _params): (_, SemanticTokensParams) =
                 match req.extract("textDocument/semanticTokens/full") {
                     Ok(v) => v,
                     Err(e) => return Err(format!("{e:?}").into()),
                 };
-            let key = uri_key(&params.text_document.uri);
-            let tokens = documents
-                .get(&key)
-                .map(semantic_tokens_for_doc)
-                .unwrap_or_default();
             connection.sender.send(Message::Response(Response::new_ok(
                 id,
                 SemanticTokensResult::Tokens(SemanticTokens {
                     result_id: None,
-                    data: tokens,
+                    data: vec![],
                 }),
             )))?;
         }
@@ -624,63 +598,6 @@ fn hover_for_doc(doc: &DocumentState, position: Position) -> Option<Hover> {
             end: byte_to_position(doc.session.source(), u32::from(info.range.end())),
         }),
     })
-}
-
-fn semantic_tokens_for_doc(doc: &DocumentState) -> Vec<LspSemanticToken> {
-    let Some(root) = doc.session.syntax() else {
-        return vec![];
-    };
-    let model = SemanticModel::analyze(root);
-    let tokens = ide_classify(root, &model);
-
-    let mut result = Vec::with_capacity(tokens.len());
-    let mut prev_line = 0u32;
-    let mut prev_start = 0u32;
-
-    for tok in &tokens {
-        let start = byte_to_position(doc.session.source(), u32::from(tok.range.start()));
-        let end = byte_to_position(doc.session.source(), u32::from(tok.range.end()));
-        let length = if start.line == end.line {
-            end.character - start.character
-        } else {
-            u32::from(tok.range.end()) - u32::from(tok.range.start())
-        };
-
-        let delta_line = start.line - prev_line;
-        let delta_start = if delta_line == 0 {
-            start.character - prev_start
-        } else {
-            start.character
-        };
-
-        use semtree_ide::SemanticTokenType;
-        let token_type = match tok.token_type {
-            SemanticTokenType::Keyword => 0,
-            SemanticTokenType::Type => 1,
-            SemanticTokenType::Function => 2,
-            SemanticTokenType::Variable => 3,
-            SemanticTokenType::String => 4,
-            SemanticTokenType::Number => 5,
-            SemanticTokenType::Comment => 6,
-            SemanticTokenType::Operator => 7,
-            SemanticTokenType::Parameter => 8,
-            SemanticTokenType::Property => 9,
-            SemanticTokenType::Enum => 10,
-        };
-
-        result.push(LspSemanticToken {
-            delta_line,
-            delta_start,
-            length,
-            token_type,
-            token_modifiers_bitset: 0,
-        });
-
-        prev_line = start.line;
-        prev_start = start.character;
-    }
-
-    result
 }
 
 fn format_doc(doc: &DocumentState) -> Vec<TextEdit> {
