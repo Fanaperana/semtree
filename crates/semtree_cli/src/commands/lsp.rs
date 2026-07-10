@@ -8,21 +8,20 @@ use std::path::{Path, PathBuf};
 use lsp_server::{Connection, Message, Notification, Request, Response};
 use lsp_types::{
     CompletionItem as LspCompletionItem, CompletionOptions, CompletionParams, CompletionResponse,
-    Diagnostic, DiagnosticSeverity, DocumentFormattingParams, DocumentSymbol,
-    DocumentSymbolParams, DocumentSymbolResponse, FoldingRange as LspFoldingRange,
-    FoldingRangeKind, FoldingRangeParams, FoldingRangeProviderCapability, GotoDefinitionParams,
-    GotoDefinitionResponse, Hover, HoverContents, HoverParams, HoverProviderCapability,
-    Location, MarkupContent, MarkupKind, OneOf, Position, Range, ReferenceParams,
-    SemanticToken as LspSemanticToken, SemanticTokenType as LspSemanticTokenType,
-    SemanticTokens, SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
-    SemanticTokensParams, SemanticTokensResult, SemanticTokensServerCapabilities,
-    ServerCapabilities, SymbolKind, TextDocumentSyncCapability, TextDocumentSyncKind,
-    TextDocumentSyncOptions, TextEdit, Uri,
+    Diagnostic, DiagnosticSeverity, DocumentFormattingParams, DocumentSymbol, DocumentSymbolParams,
+    DocumentSymbolResponse, FoldingRange as LspFoldingRange, FoldingRangeKind, FoldingRangeParams,
+    FoldingRangeProviderCapability, GotoDefinitionParams, GotoDefinitionResponse, Hover,
+    HoverContents, HoverParams, HoverProviderCapability, Location, MarkupContent, MarkupKind,
+    OneOf, Position, Range, ReferenceParams, SemanticToken as LspSemanticToken,
+    SemanticTokenType as LspSemanticTokenType, SemanticTokens, SemanticTokensFullOptions,
+    SemanticTokensLegend, SemanticTokensOptions, SemanticTokensParams, SemanticTokensResult,
+    SemanticTokensServerCapabilities, ServerCapabilities, SymbolKind, TextDocumentSyncCapability,
+    TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri,
 };
 use semtree_ide::{
-    classify_tokens as ide_classify, complete_at as ide_complete,
-    document_symbols as ide_symbols, find_references as ide_references, folding_ranges as ide_fold,
-    goto_definition as ide_goto_def, hover_info as ide_hover,
+    classify_tokens as ide_classify, complete_at as ide_complete, document_symbols as ide_symbols,
+    find_references as ide_references, folding_ranges as ide_fold, goto_definition as ide_goto_def,
+    hover_info as ide_hover,
 };
 use semtree_runtime::{ParseSession, ParserBackend};
 use semtree_semantic::SemanticModel;
@@ -51,14 +50,15 @@ pub fn lsp(exe_dir: PathBuf) -> super::Result {
 
     // Extract root_uri from initialization params to search for grammars
     #[allow(deprecated)]
-    let root_path: Option<PathBuf> = serde_json::from_value::<lsp_types::InitializeParams>(init_params)
-        .ok()
-        .and_then(|params| {
-            params
-                .root_uri
-                .and_then(|uri| uri.as_str().strip_prefix("file://").map(|s| PathBuf::from(s)))
-                .or_else(|| params.root_path.map(PathBuf::from))
-        });
+    let root_path: Option<PathBuf> =
+        serde_json::from_value::<lsp_types::InitializeParams>(init_params)
+            .ok()
+            .and_then(|params| {
+                params
+                    .root_uri
+                    .and_then(|uri| uri.as_str().strip_prefix("file://").map(PathBuf::from))
+                    .or_else(|| params.root_path.map(PathBuf::from))
+            });
 
     let mut documents: HashMap<String, DocumentState> = HashMap::new();
 
@@ -71,7 +71,13 @@ pub fn lsp(exe_dir: PathBuf) -> super::Result {
                 handle_request(&connection, &documents, req)?;
             }
             Message::Notification(notif) => {
-                handle_notification(&connection, &mut documents, &exe_dir, root_path.as_deref(), notif)?;
+                handle_notification(
+                    &connection,
+                    &mut documents,
+                    &exe_dir,
+                    root_path.as_deref(),
+                    notif,
+                )?;
             }
             Message::Response(_) => {}
         }
@@ -113,8 +119,8 @@ fn server_capabilities() -> ServerCapabilities {
         references_provider: Some(OneOf::Left(true)),
         document_formatting_provider: Some(OneOf::Left(true)),
         folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
-        semantic_tokens_provider: Some(
-            SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions {
+        semantic_tokens_provider: Some(SemanticTokensServerCapabilities::SemanticTokensOptions(
+            SemanticTokensOptions {
                 legend: SemanticTokensLegend {
                     token_types,
                     token_modifiers: vec![],
@@ -122,8 +128,8 @@ fn server_capabilities() -> ServerCapabilities {
                 full: Some(SemanticTokensFullOptions::Bool(true)),
                 range: None,
                 ..Default::default()
-            }),
-        ),
+            },
+        )),
         ..Default::default()
     }
 }
@@ -146,30 +152,25 @@ fn handle_request(
                 };
             let key = uri_key(&params.text_document.uri);
             let symbols = documents.get(&key).map(symbols_for_doc).unwrap_or_default();
-            connection
-                .sender
-                .send(Message::Response(Response::new_ok(
-                    id,
-                    DocumentSymbolResponse::Nested(symbols),
-                )))?;
+            connection.sender.send(Message::Response(Response::new_ok(
+                id,
+                DocumentSymbolResponse::Nested(symbols),
+            )))?;
         }
         "textDocument/completion" => {
-            let (id, params): (_, CompletionParams) =
-                match req.extract("textDocument/completion") {
-                    Ok(v) => v,
-                    Err(e) => return Err(format!("{e:?}").into()),
-                };
+            let (id, params): (_, CompletionParams) = match req.extract("textDocument/completion") {
+                Ok(v) => v,
+                Err(e) => return Err(format!("{e:?}").into()),
+            };
             let key = uri_key(&params.text_document_position.text_document.uri);
             let items = documents
                 .get(&key)
                 .map(|doc| completion_for_doc(doc, params.text_document_position.position))
                 .unwrap_or_default();
-            connection
-                .sender
-                .send(Message::Response(Response::new_ok(
-                    id,
-                    CompletionResponse::Array(items),
-                )))?;
+            connection.sender.send(Message::Response(Response::new_ok(
+                id,
+                CompletionResponse::Array(items),
+            )))?;
         }
         "textDocument/hover" => {
             let (id, params): (_, HoverParams) = match req.extract("textDocument/hover") {
@@ -190,7 +191,11 @@ fn handle_request(
                     Ok(v) => v,
                     Err(e) => return Err(format!("{e:?}").into()),
                 };
-            let uri = params.text_document_position_params.text_document.uri.clone();
+            let uri = params
+                .text_document_position_params
+                .text_document
+                .uri
+                .clone();
             let key = uri_key(&uri);
             let def = documents.get(&key).and_then(|doc| {
                 let offset = position_to_offset(
@@ -213,18 +218,19 @@ fn handle_request(
                 .send(Message::Response(Response::new_ok(id, def)))?;
         }
         "textDocument/references" => {
-            let (id, params): (_, ReferenceParams) =
-                match req.extract("textDocument/references") {
-                    Ok(v) => v,
-                    Err(e) => return Err(format!("{e:?}").into()),
-                };
+            let (id, params): (_, ReferenceParams) = match req.extract("textDocument/references") {
+                Ok(v) => v,
+                Err(e) => return Err(format!("{e:?}").into()),
+            };
             let uri = params.text_document_position.text_document.uri.clone();
             let key = uri_key(&uri);
             let refs: Vec<Location> = documents
                 .get(&key)
                 .map(|doc| {
-                    let offset =
-                        position_to_offset(doc.session.source(), params.text_document_position.position);
+                    let offset = position_to_offset(
+                        doc.session.source(),
+                        params.text_document_position.position,
+                    );
                     let Some(root) = doc.session.syntax() else {
                         return vec![];
                     };
@@ -257,7 +263,7 @@ fn handle_request(
             let key = uri_key(&params.text_document.uri);
             let tokens = documents
                 .get(&key)
-                .map(|doc| semantic_tokens_for_doc(doc))
+                .map(semantic_tokens_for_doc)
                 .unwrap_or_default();
             connection.sender.send(Message::Response(Response::new_ok(
                 id,
@@ -274,10 +280,7 @@ fn handle_request(
                     Err(e) => return Err(format!("{e:?}").into()),
                 };
             let key = uri_key(&params.text_document.uri);
-            let edits = documents
-                .get(&key)
-                .map(|doc| format_doc(doc))
-                .unwrap_or_default();
+            let edits = documents.get(&key).map(format_doc).unwrap_or_default();
             connection
                 .sender
                 .send(Message::Response(Response::new_ok(id, edits)))?;
@@ -289,10 +292,7 @@ fn handle_request(
                     Err(e) => return Err(format!("{e:?}").into()),
                 };
             let key = uri_key(&params.text_document.uri);
-            let ranges = documents
-                .get(&key)
-                .map(|doc| folding_for_doc(doc))
-                .unwrap_or_default();
+            let ranges = documents.get(&key).map(folding_for_doc).unwrap_or_default();
             connection
                 .sender
                 .send(Message::Response(Response::new_ok(id, ranges)))?;
@@ -362,31 +362,30 @@ fn open_document(
     let path = uri_to_path(&uri)?;
 
     // Also search for grammars relative to workspace root
-    let grammar_result = resolve_grammar(None, &path, exe_dir)
-        .or_else(|e| {
-            if let Some(root) = root_path {
-                let grammars_in_root = root.join("grammars");
-                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-                let grammar_name = match ext {
-                    "js" | "jsx" | "mjs" | "cjs" | "ts" | "tsx" => "javascript",
-                    "py" | "pyw" => "python",
-                    "rs" => "rust",
-                    "css" | "scss" | "less" => "css",
-                    "json" => "json",
-                    "toml" => "toml",
-                    _ => return Err(e),
-                };
-                let candidate = grammars_in_root.join(format!("{grammar_name}.semtree"));
-                if candidate.exists() {
-                    let grammar = super::grammar_util::load_grammar(&candidate)?;
-                    Ok((candidate, grammar))
-                } else {
-                    Err(e)
-                }
+    let grammar_result = resolve_grammar(None, &path, exe_dir).or_else(|e| {
+        if let Some(root) = root_path {
+            let grammars_in_root = root.join("grammars");
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            let grammar_name = match ext {
+                "js" | "jsx" | "mjs" | "cjs" | "ts" | "tsx" => "javascript",
+                "py" | "pyw" => "python",
+                "rs" => "rust",
+                "css" | "scss" | "less" => "css",
+                "json" => "json",
+                "toml" => "toml",
+                _ => return Err(e),
+            };
+            let candidate = grammars_in_root.join(format!("{grammar_name}.semtree"));
+            if candidate.exists() {
+                let grammar = super::grammar_util::load_grammar(&candidate)?;
+                Ok((candidate, grammar))
             } else {
                 Err(e)
             }
-        });
+        } else {
+            Err(e)
+        }
+    });
 
     let (_, grammar) = grammar_result?;
     let mut session = ParseSession::new(grammar, ParserBackend::Auto);

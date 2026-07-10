@@ -111,7 +111,7 @@ fn find_references_finds_all() {
     // Test find_references with the function name which is at top level
     let offset = source.find("main").unwrap() as u32 + 1;
     let refs = find_references(&root, &model, offset);
-    assert!(refs.len() >= 1);
+    assert!(!refs.is_empty());
 }
 
 #[test]

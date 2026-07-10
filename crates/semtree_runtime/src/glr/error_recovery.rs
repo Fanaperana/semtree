@@ -69,8 +69,12 @@ impl GlrErrorRecovery {
                 RuntimeTokenKind::StringLit => SyntaxKind::STRING_LIT,
                 _ => SyntaxKind::IDENT,
             };
-            let sppf_node =
-                sppf.create_terminal(terminal, SmolStr::from(tok.text(source)), tok.range, syntax_kind);
+            let sppf_node = sppf.create_terminal(
+                terminal,
+                SmolStr::from(tok.text(source)),
+                tok.range,
+                syntax_kind,
+            );
             skipped_sppf_children.push(sppf_node);
             skip_idx += 1;
 

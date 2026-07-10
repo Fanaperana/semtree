@@ -193,9 +193,9 @@ impl RuntimeLexer {
 
         // Detect whether the grammar uses `#` for comments.
         // Check extras patterns, or infer from language name / indent-sensitive flag.
-        let has_hash_extra = extra_patterns.iter().any(|e| {
-            matches!(e.kind, RuntimeTokenKind::LineComment)
-        });
+        let has_hash_extra = extra_patterns
+            .iter()
+            .any(|e| matches!(e.kind, RuntimeTokenKind::LineComment));
         let hash_comments = has_hash_extra
             || grammar.indent_sensitive
             || grammar.name.as_str() == "python"
@@ -468,7 +468,8 @@ impl RuntimeLexer {
                         b'o' | b'O' => {
                             pos += 2;
                             while pos < source.len()
-                                && ((bytes[pos] >= b'0' && bytes[pos] <= b'7') || bytes[pos] == b'_')
+                                && ((bytes[pos] >= b'0' && bytes[pos] <= b'7')
+                                    || bytes[pos] == b'_')
                             {
                                 pos += 1;
                             }
@@ -478,8 +479,9 @@ impl RuntimeLexer {
                             });
                             continue;
                         }
-                        b'b' | b'B' if pos + 2 < source.len()
-                            && (bytes[pos + 2] == b'0' || bytes[pos + 2] == b'1') =>
+                        b'b' | b'B'
+                            if pos + 2 < source.len()
+                                && (bytes[pos + 2] == b'0' || bytes[pos + 2] == b'1') =>
                         {
                             pos += 2;
                             while pos < source.len()

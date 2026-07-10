@@ -67,8 +67,10 @@ fn format_if_expression() {
 
 #[test]
 fn format_tabs() {
-    let mut config = FormatConfig::default();
-    config.use_tabs = true;
+    let config = FormatConfig {
+        use_tabs: true,
+        ..Default::default()
+    };
     let result = format_with("fn main() { let x = 1; }", config);
     assert!(result.contains('\t'));
 }
@@ -81,8 +83,10 @@ fn trailing_newline() {
 
 #[test]
 fn no_trailing_newline() {
-    let mut config = FormatConfig::default();
-    config.trailing_newline = false;
+    let config = FormatConfig {
+        trailing_newline: false,
+        ..Default::default()
+    };
     let result = format_with("fn main() {}", config);
     // With trailing_newline = false, the result should not end with
     // multiple newlines. The formatter may emit one from the source_file format.

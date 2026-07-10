@@ -232,7 +232,11 @@ Function := "fn" Identifier "(" ")" "{" "}"
         let mut session = ParseSession::new(mini_grammar(), ParserBackend::RecursiveDescent);
         let _ = session.parse("fn foo() {}");
         let result = session.edit(6, 6, "x");
-        assert!(result.syntax.text().contains("foox"), "got: {}", result.syntax.text());
+        assert!(
+            result.syntax.text().contains("foox"),
+            "got: {}",
+            result.syntax.text()
+        );
     }
 
     #[test]

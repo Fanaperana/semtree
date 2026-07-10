@@ -12,6 +12,7 @@ use crate::node::{GreenElement, GreenNode, GreenToken};
 #[derive(Debug)]
 pub struct NodeCache {
     tokens: FxHashMap<(SyntaxKind, SmolStr), GreenToken>,
+    #[allow(dead_code)]
     nodes: FxHashMap<(SyntaxKind, u64), GreenNode>,
 }
 
@@ -42,6 +43,7 @@ impl NodeCache {
         GreenNode::new(kind, children)
     }
 
+    #[allow(dead_code)]
     fn hash_children(&self, children: &[GreenElement]) -> u64 {
         use std::hash::{Hash, Hasher};
         let mut hasher = rustc_hash::FxHasher::default();

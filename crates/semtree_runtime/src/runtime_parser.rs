@@ -128,24 +128,28 @@ fn first_of_expr(
             // Check builtins.
             match name.as_str() {
                 "Identifier" | "identifier" | "_identifier" => {
-                    let mut fs = FirstSet::default();
-                    fs.can_match_ident = true;
-                    return fs;
+                    return FirstSet {
+                        can_match_ident: true,
+                        ..Default::default()
+                    };
                 }
                 "Integer" | "integer" | "number" => {
-                    let mut fs = FirstSet::default();
-                    fs.can_match_int = true;
-                    return fs;
+                    return FirstSet {
+                        can_match_int: true,
+                        ..Default::default()
+                    };
                 }
                 "Float" | "float" => {
-                    let mut fs = FirstSet::default();
-                    fs.can_match_float = true;
-                    return fs;
+                    return FirstSet {
+                        can_match_float: true,
+                        ..Default::default()
+                    };
                 }
                 "String" | "string" => {
-                    let mut fs = FirstSet::default();
-                    fs.can_match_string = true;
-                    return fs;
+                    return FirstSet {
+                        can_match_string: true,
+                        ..Default::default()
+                    };
                 }
                 "INDENT" | "Indent" => {
                     let mut fs = FirstSet::default();
@@ -161,7 +165,11 @@ fn first_of_expr(
             }
 
             // Check custom tokens — they can match ident-like things.
-            if grammar.tokens.iter().any(|t| t.name.as_str() == name.as_str()) {
+            if grammar
+                .tokens
+                .iter()
+                .any(|t| t.name.as_str() == name.as_str())
+            {
                 return FirstSet::universal();
             }
 
@@ -215,14 +223,13 @@ fn first_of_expr(
         RuleExpr::Field(_, inner) | RuleExpr::Token(inner) => {
             first_of_expr(inner, grammar, sets, visiting)
         }
-        RuleExpr::Prec(_, inner)
-        | RuleExpr::PrecLeft(_, inner)
-        | RuleExpr::PrecRight(_, inner) => first_of_expr(inner, grammar, sets, visiting),
-        RuleExpr::Blank => {
-            let mut fs = FirstSet::default();
-            fs.can_be_empty = true;
-            fs
+        RuleExpr::Prec(_, inner) | RuleExpr::PrecLeft(_, inner) | RuleExpr::PrecRight(_, inner) => {
+            first_of_expr(inner, grammar, sets, visiting)
         }
+        RuleExpr::Blank => FirstSet {
+            can_be_empty: true,
+            ..Default::default()
+        },
     }
 }
 
@@ -277,7 +284,6 @@ enum BuiltinKind {
 /// Recursively walk all expressions in a rule, computing and caching FIRST sets.
 fn precompute_expr_first(
     expr: &RuleExpr,
-    grammar: &Grammar,
     first_sets: &FxHashMap<SmolStr, FirstSet>,
     cache: &mut FxHashMap<ExprId, FirstSet>,
 ) {
@@ -292,7 +298,7 @@ fn precompute_expr_first(
     match expr {
         RuleExpr::Seq(parts) | RuleExpr::Choice(parts) => {
             for part in parts {
-                precompute_expr_first(part, grammar, first_sets, cache);
+                precompute_expr_first(part, first_sets, cache);
             }
         }
         RuleExpr::Repeat(inner)
@@ -303,7 +309,7 @@ fn precompute_expr_first(
         | RuleExpr::Prec(_, inner)
         | RuleExpr::PrecLeft(_, inner)
         | RuleExpr::PrecRight(_, inner) => {
-            precompute_expr_first(inner, grammar, first_sets, cache);
+            precompute_expr_first(inner, first_sets, cache);
         }
         RuleExpr::Literal(_) | RuleExpr::RuleRef(_) | RuleExpr::Blank => {}
     }
@@ -345,9 +351,9 @@ fn resolve_refs_in_expr(
     match expr {
         RuleExpr::RuleRef(name) => {
             let eid = expr_id(expr);
-            if !cache.contains_key(&eid) {
-                cache.insert(eid, resolve_name(name, rule_indices, custom_token_indices));
-            }
+            cache
+                .entry(eid)
+                .or_insert_with(|| resolve_name(name, rule_indices, custom_token_indices));
         }
         RuleExpr::Seq(parts) | RuleExpr::Choice(parts) => {
             for part in parts {
@@ -381,26 +387,22 @@ fn first_of_expr_static(expr: &RuleExpr, first_sets: &FxHashMap<SmolStr, FirstSe
                 fs.clone()
             } else {
                 match name.as_str() {
-                    "Identifier" | "identifier" | "_identifier" => {
-                        let mut fs = FirstSet::default();
-                        fs.can_match_ident = true;
-                        fs
-                    }
-                    "Integer" | "integer" | "number" => {
-                        let mut fs = FirstSet::default();
-                        fs.can_match_int = true;
-                        fs
-                    }
-                    "Float" | "float" => {
-                        let mut fs = FirstSet::default();
-                        fs.can_match_float = true;
-                        fs
-                    }
-                    "String" | "string" => {
-                        let mut fs = FirstSet::default();
-                        fs.can_match_string = true;
-                        fs
-                    }
+                    "Identifier" | "identifier" | "_identifier" => FirstSet {
+                        can_match_ident: true,
+                        ..Default::default()
+                    },
+                    "Integer" | "integer" | "number" => FirstSet {
+                        can_match_int: true,
+                        ..Default::default()
+                    },
+                    "Float" | "float" => FirstSet {
+                        can_match_float: true,
+                        ..Default::default()
+                    },
+                    "String" | "string" => FirstSet {
+                        can_match_string: true,
+                        ..Default::default()
+                    },
                     _ => FirstSet::universal(),
                 }
             }
@@ -440,9 +442,9 @@ fn first_of_expr_static(expr: &RuleExpr, first_sets: &FxHashMap<SmolStr, FirstSe
         RuleExpr::Field(_, inner) | RuleExpr::Token(inner) => {
             first_of_expr_static(inner, first_sets)
         }
-        RuleExpr::Prec(_, inner)
-        | RuleExpr::PrecLeft(_, inner)
-        | RuleExpr::PrecRight(_, inner) => first_of_expr_static(inner, first_sets),
+        RuleExpr::Prec(_, inner) | RuleExpr::PrecLeft(_, inner) | RuleExpr::PrecRight(_, inner) => {
+            first_of_expr_static(inner, first_sets)
+        }
         _ => FirstSet::universal(),
     }
 }
@@ -519,7 +521,9 @@ fn build_choice_dispatch(
     let mut universal_alts = Vec::new();
 
     for (i, alt) in alts.iter().enumerate() {
-        if i >= 255 { break; } // u8 index limit
+        if i >= 255 {
+            break;
+        } // u8 index limit
         let idx = i as u8;
         let eid = expr_id(alt);
         if let Some(fs) = expr_first_cache.get(&eid) {
@@ -530,16 +534,31 @@ fn build_choice_dispatch(
             for lit in &fs.literals {
                 literal_map.entry(lit.clone()).or_default().push(idx);
             }
-            if fs.can_match_ident { ident_alts.push(idx); }
-            if fs.can_match_int { int_alts.push(idx); }
-            if fs.can_match_float { float_alts.push(idx); }
-            if fs.can_match_string { string_alts.push(idx); }
+            if fs.can_match_ident {
+                ident_alts.push(idx);
+            }
+            if fs.can_match_int {
+                int_alts.push(idx);
+            }
+            if fs.can_match_float {
+                float_alts.push(idx);
+            }
+            if fs.can_match_string {
+                string_alts.push(idx);
+            }
         } else {
             universal_alts.push(idx);
         }
     }
 
-    ChoiceDispatch { literal_map, ident_alts, int_alts, float_alts, string_alts, universal_alts }
+    ChoiceDispatch {
+        literal_map,
+        ident_alts,
+        int_alts,
+        float_alts,
+        string_alts,
+        universal_alts,
+    }
 }
 
 /// Precompute ChoiceDispatch tables for all Choice expressions in the grammar.
@@ -675,7 +694,7 @@ impl RuntimeParser {
         // Precompute FIRST sets for every expression node in the grammar.
         let mut expr_first_cache = FxHashMap::default();
         for rule in grammar.rules.values() {
-            precompute_expr_first(&rule.expr, &grammar, &first_sets, &mut expr_first_cache);
+            precompute_expr_first(&rule.expr, &first_sets, &mut expr_first_cache);
         }
 
         // Identify transparent rules: pure dispatch rules (Choice of RuleRefs),
@@ -882,10 +901,10 @@ impl RuntimeParser {
             }
             // Entry rule like `Foo := Statement*` at the end of a Seq
             RuleExpr::Seq(parts) if parts.len() == 1 => {
-                if let RuleExpr::Repeat(inner) | RuleExpr::Repeat1(inner) = &parts[0] {
-                    if let RuleExpr::RuleRef(name) = inner.as_ref() {
-                        return Some(name.to_string());
-                    }
+                if let RuleExpr::Repeat(inner) | RuleExpr::Repeat1(inner) = &parts[0]
+                    && let RuleExpr::RuleRef(name) = inner.as_ref()
+                {
+                    return Some(name.to_string());
                 }
                 None
             }
@@ -929,6 +948,7 @@ struct ParseContext<'a> {
 const MAX_DEPTH: u32 = 512;
 
 impl<'a> ParseContext<'a> {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         tokens: &'a [RawToken],
         source: &'a str,
@@ -942,7 +962,7 @@ impl<'a> ParseContext<'a> {
         let num_rules = rule_indices.len();
         let token_count = tokens.len() + 1; // +1 for EOF sentinel
         let total_bits = num_rules * token_count;
-        let num_words = (total_bits + 63) / 64;
+        let num_words = total_bits.div_ceil(64);
         Self {
             tokens,
             source,
@@ -1028,6 +1048,7 @@ impl<'a> ParseContext<'a> {
         i
     }
 
+    #[allow(dead_code)]
     fn peek_text(&mut self) -> &str {
         let i = self.skip_trivia_pos();
         if i < self.tokens.len() {
@@ -1454,18 +1475,18 @@ impl<'a> ParseContext<'a> {
                     // Case 1: missing closing/separator literal (e.g. ";", ")",
                     // "}", ",", ":"). Only recover for known delimiters, not
                     // operators like "=>" that disambiguate rules.
-                    if let RuleExpr::Literal(lit) = expr {
-                        if Self::is_recoverable_literal(lit) {
-                            self.error_missing(&format!("'{lit}'"));
-                            continue;
-                        }
+                    if let RuleExpr::Literal(lit) = expr
+                        && Self::is_recoverable_literal(lit)
+                    {
+                        self.error_missing(&format!("'{lit}'"));
+                        continue;
                     }
 
                     // Case 2: an optional-like position — if the remaining
                     // elements are all Optional, we can succeed here.
-                    let all_remaining_optional = exprs[i..].iter().all(|e| {
-                        matches!(e, RuleExpr::Optional(_) | RuleExpr::Repeat(_))
-                    });
+                    let all_remaining_optional = exprs[i..]
+                        .iter()
+                        .all(|e| matches!(e, RuleExpr::Optional(_) | RuleExpr::Repeat(_)));
                     if all_remaining_optional {
                         return true;
                     }
@@ -1483,45 +1504,45 @@ impl<'a> ParseContext<'a> {
 
         // Peek at the next non-trivia token for FIRST-set filtering.
         let peek_pos = self.skip_trivia_pos();
-        let have_lookahead = peek_pos < self.tokens.len()
-            && self.tokens[peek_pos].kind != RuntimeTokenKind::Eof;
+        let have_lookahead =
+            peek_pos < self.tokens.len() && self.tokens[peek_pos].kind != RuntimeTokenKind::Eof;
 
         // Optimisation: detect the common "LongerAlt | ShorterAlt" pattern
         // where alternatives share a leading prefix (e.g.
         //   A B C | A   — parse A once then optionally try B C).
         // This avoids re-parsing the common prefix on backtrack.
-        if exprs.len() == 2 {
-            if let (RuleExpr::Seq(long), short) = (&exprs[0], &exprs[1]) {
-                if long.len() >= 2 && *short == long[0] {
-                    // Try the common prefix.
-                    if self.try_parse_expr(short) {
-                        // Prefix matched. Now try the suffix of the longer alternative.
-                        let suffix_save = self.pos;
-                        let suffix_save_builder = self.builder.checkpoint();
-                        let suffix_save_errors = self.errors.len();
-                        let mut suffix_ok = true;
-                        for part in &long[1..] {
-                            if !self.parse_expr(part) {
-                                suffix_ok = false;
-                                break;
-                            }
-                        }
-                        if !suffix_ok {
-                            // Suffix failed — rollback to after the prefix.
-                            self.pos = suffix_save;
-                            self.errors.truncate(suffix_save_errors);
-                            self.builder.rollback(suffix_save_builder);
-                        }
-                        // Either way, the prefix succeeded — return true.
-                        return true;
+        if exprs.len() == 2
+            && let (RuleExpr::Seq(long), short) = (&exprs[0], &exprs[1])
+            && long.len() >= 2
+            && *short == long[0]
+        {
+            // Try the common prefix.
+            if self.try_parse_expr(short) {
+                // Prefix matched. Now try the suffix of the longer alternative.
+                let suffix_save = self.pos;
+                let suffix_save_builder = self.builder.checkpoint();
+                let suffix_save_errors = self.errors.len();
+                let mut suffix_ok = true;
+                for part in &long[1..] {
+                    if !self.parse_expr(part) {
+                        suffix_ok = false;
+                        break;
                     }
-                    // Prefix failed — fall through to normal logic.
-                    self.pos = save_pos;
-                    self.errors.truncate(save_errors);
-                    self.builder.rollback(save_builder);
-                    return false;
                 }
+                if !suffix_ok {
+                    // Suffix failed — rollback to after the prefix.
+                    self.pos = suffix_save;
+                    self.errors.truncate(suffix_save_errors);
+                    self.builder.rollback(suffix_save_builder);
+                }
+                // Either way, the prefix succeeded — return true.
+                return true;
             }
+            // Prefix failed — fall through to normal logic.
+            self.pos = save_pos;
+            self.errors.truncate(save_errors);
+            self.builder.rollback(save_builder);
+            return false;
         }
 
         // Fast path: use pre-computed dispatch table for choices with ≥3 alternatives.
@@ -1532,7 +1553,11 @@ impl<'a> ParseContext<'a> {
                 let (specific, extra) = dispatch.candidates_for(tok, self.source);
 
                 // Try specific matches first, then extra (ident fallbacks), then universals.
-                for &alt_idx in specific.iter().chain(extra.iter()).chain(dispatch.universal_alts.iter()) {
+                for &alt_idx in specific
+                    .iter()
+                    .chain(extra.iter())
+                    .chain(dispatch.universal_alts.iter())
+                {
                     let expr = &exprs[alt_idx as usize];
                     self.pos = save_pos;
                     self.errors.truncate(save_errors);
@@ -1559,7 +1584,9 @@ impl<'a> ParseContext<'a> {
                 } else {
                     false
                 };
-                if skip { continue; }
+                if skip {
+                    continue;
+                }
 
                 self.pos = save_pos;
                 self.errors.truncate(save_errors);

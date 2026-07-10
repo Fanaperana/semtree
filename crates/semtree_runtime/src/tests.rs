@@ -629,7 +629,7 @@ fn edge_incremental_delete_middle() {
 
     let new_source = "fn foo() { return x; }";
     let edits = vec![EditRegion::new(11, 23, "")];
-    let result = inc.update(&new_source, &edits);
+    let result = inc.update(new_source, &edits);
     assert_eq!(result.syntax().text(), new_source);
 }
 
@@ -643,7 +643,7 @@ fn edge_incremental_replace_token() {
 
     let new_source = "fn foo() { return 99; }";
     let edits = vec![EditRegion::new(18, 20, "99")];
-    let result = inc.update(&new_source, &edits);
+    let result = inc.update(new_source, &edits);
     assert_eq!(result.syntax().text(), new_source);
 }
 
@@ -927,8 +927,8 @@ fn bench_incremental_lex_is_partial() {
 fn load_grammar(name: &str) -> semtree_grammar::Grammar {
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join(format!("../../grammars/{name}.semtree"));
-    let src = std::fs::read_to_string(&path).expect(&format!("load {name} grammar"));
-    parse_semtree_dsl(&src).expect(&format!("parse {name} grammar"))
+    let src = std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("load {name} grammar"));
+    parse_semtree_dsl(&src).unwrap_or_else(|_| panic!("parse {name} grammar"))
 }
 
 fn rust_grammar() -> semtree_grammar::Grammar {
@@ -969,12 +969,18 @@ fn dsl_literal_optional() {
                     matches!(p, semtree_grammar::RuleExpr::Optional(inner)
                         if matches!(inner.as_ref(), semtree_grammar::RuleExpr::Literal(s) if s == ","))
                 });
-                assert!(has_optional_comma, "StructFields should have Optional(Literal(\",\")): {parts:?}");
+                assert!(
+                    has_optional_comma,
+                    "StructFields should have Optional(Literal(\",\")): {parts:?}"
+                );
                 // Should NOT have a RuleRef("?")
-                let has_question_ref = parts.iter().any(|p| {
-                    matches!(p, semtree_grammar::RuleExpr::RuleRef(s) if s == "?")
-                });
-                assert!(!has_question_ref, "StructFields should NOT have RuleRef(\"?\")");
+                let has_question_ref = parts
+                    .iter()
+                    .any(|p| matches!(p, semtree_grammar::RuleExpr::RuleRef(s) if s == "?"));
+                assert!(
+                    !has_question_ref,
+                    "StructFields should NOT have RuleRef(\"?\")"
+                );
             }
             other => panic!("StructFields should be Seq, got: {other:?}"),
         }
@@ -1162,7 +1168,10 @@ fn rust_if_else() {
     let parser = RuntimeParser::new(grammar);
     let result = parser.parse("fn main() { if true { 1 } else { 2 } }");
     // Grammar may have limited expression support
-    assert_eq!(result.syntax().text(), "fn main() { if true { 1 } else { 2 } }");
+    assert_eq!(
+        result.syntax().text(),
+        "fn main() { if true { 1 } else { 2 } }"
+    );
 }
 
 #[test]
@@ -1170,14 +1179,21 @@ fn rust_match_expr() {
     let grammar = rust_grammar();
     let parser = RuntimeParser::new(grammar);
     let result = parser.parse("fn main() { match x { 1 => 2, _ => 3 } }");
-    assert_eq!(result.syntax().text(), "fn main() { match x { 1 => 2, _ => 3 } }");
+    assert_eq!(
+        result.syntax().text(),
+        "fn main() { match x { 1 => 2, _ => 3 } }"
+    );
 }
 
 #[test]
 fn rust_loop_while_for() {
     let grammar = rust_grammar();
     let parser = RuntimeParser::new(grammar);
-    for src in &["fn main() { loop {} }", "fn main() { while true {} }", "fn main() { for x in items {} }"] {
+    for src in &[
+        "fn main() { loop {} }",
+        "fn main() { while true {} }",
+        "fn main() { for x in items {} }",
+    ] {
         let result = parser.parse(src);
         assert_eq!(result.syntax().text(), *src, "roundtrip failed for {src}");
     }
@@ -1236,7 +1252,10 @@ fn rust_fn_return_type() {
     let grammar = rust_grammar();
     let parser = RuntimeParser::new(grammar);
     let result = parser.parse("fn add(a: i32, b: i32) -> i32 { a }");
-    assert_eq!(result.syntax().text(), "fn add(a: i32, b: i32) -> i32 { a }");
+    assert_eq!(
+        result.syntax().text(),
+        "fn add(a: i32, b: i32) -> i32 { a }"
+    );
 }
 
 #[test]
@@ -1298,7 +1317,9 @@ fn rust_demo_file() {
 
 // ── JavaScript grammar tests ────────────────────────────────
 
-fn js_grammar() -> semtree_grammar::Grammar { load_grammar("javascript") }
+fn js_grammar() -> semtree_grammar::Grammar {
+    load_grammar("javascript")
+}
 
 #[test]
 fn js_function_declaration() {
@@ -1363,7 +1384,9 @@ fn js_demo_file() {
 
 // ── Python grammar tests ────────────────────────────────────
 
-fn py_grammar() -> semtree_grammar::Grammar { load_grammar("python") }
+fn py_grammar() -> semtree_grammar::Grammar {
+    load_grammar("python")
+}
 
 #[test]
 fn py_function_def() {
@@ -1454,7 +1477,9 @@ fn json_demo_file() {
 
 // ── CSS grammar tests ──────────────────────────────────────
 
-fn css_grammar() -> semtree_grammar::Grammar { load_grammar("css") }
+fn css_grammar() -> semtree_grammar::Grammar {
+    load_grammar("css")
+}
 
 #[test]
 fn css_rule() {

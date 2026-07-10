@@ -438,8 +438,6 @@ impl IncrementalParser {
     }
 }
 
-use smol_str::SmolStr;
-
 #[cfg(test)]
 mod tests {
     use super::*;

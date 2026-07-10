@@ -187,10 +187,7 @@ impl<'a> DslParser<'a> {
                         _ => rule_token.into(),
                     },
                 });
-                exprs.push(RuleExpr::Field(
-                    field_name,
-                    Box::new(inner_expr),
-                ));
+                exprs.push(RuleExpr::Field(field_name, Box::new(inner_expr)));
                 i += 3;
                 continue;
             }
@@ -445,7 +442,10 @@ Rule :=
             RuleExpr::Choice(alts) => {
                 assert_eq!(alts.len(), 4, "should be flat 4-way choice, got {:?}", alts);
                 for alt in alts {
-                    assert!(matches!(alt, RuleExpr::RuleRef(_)), "all alts should be RuleRef");
+                    assert!(
+                        matches!(alt, RuleExpr::RuleRef(_)),
+                        "all alts should be RuleRef"
+                    );
                 }
             }
             other => panic!("expected Choice, got: {other:?}"),

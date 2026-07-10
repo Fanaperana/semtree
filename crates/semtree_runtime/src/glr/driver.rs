@@ -106,7 +106,9 @@ impl GlrParser {
             // Bail out if parsing takes too long (ambiguity explosion).
             if std::time::Instant::now() >= deadline {
                 errors.push(RuntimeParseError {
-                    message: "GLR parse timed out (grammar too ambiguous); consider using --backend rd".to_string(),
+                    message:
+                        "GLR parse timed out (grammar too ambiguous); consider using --backend rd"
+                            .to_string(),
                     range: if token_idx < tokens.len() {
                         tokens[token_idx].range
                     } else {
@@ -184,13 +186,15 @@ impl GlrParser {
             let terminal = self.token_to_symbol(tok, source);
 
             // Phase 1: Perform all reductions.
-            let reduce_result = self.perform_reductions(&active, &terminal, &mut gss, &mut sppf, deadline);
+            let reduce_result =
+                self.perform_reductions(&active, &terminal, &mut gss, &mut sppf, deadline);
             active = reduce_result.new_active;
             ambiguity_count += reduce_result.ambiguities;
 
             // Phase 2: Perform shifts.
-            let shift_result =
-                self.perform_shifts(&active, &terminal, tok, token_idx, &mut gss, &mut sppf, source);
+            let shift_result = self.perform_shifts(
+                &active, &terminal, tok, token_idx, &mut gss, &mut sppf, source,
+            );
 
             if shift_result.is_empty() {
                 // No shifts possible — error.
@@ -427,6 +431,7 @@ impl GlrParser {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn perform_shifts(
         &self,
         active: &[GssNodeId],
@@ -440,8 +445,12 @@ impl GlrParser {
         let mut new_active = Vec::new();
         let syntax_kind = self.token_to_syntax_kind(tok);
 
-        let sppf_terminal =
-            sppf.create_terminal(terminal.clone(), SmolStr::from(tok.text(source)), tok.range, syntax_kind);
+        let sppf_terminal = sppf.create_terminal(
+            terminal.clone(),
+            SmolStr::from(tok.text(source)),
+            tok.range,
+            syntax_kind,
+        );
 
         for &gss_node in active {
             let state = gss.state_of(gss_node);

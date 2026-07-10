@@ -27,7 +27,7 @@ const SIZES: &[(&str, usize)] = &[
 fn generate_json(target_size: usize) -> String {
     let base = r#"{"name":"Alice","age":30,"active":true,"scores":[95,87,92],"address":{"street":"123 Main St","city":"Springfield","zip":"62701"}}"#;
     let mut result = String::with_capacity(target_size + 256);
-    result.push_str("[");
+    result.push('[');
     let mut first = true;
     while result.len() < target_size {
         if !first {
@@ -36,7 +36,7 @@ fn generate_json(target_size: usize) -> String {
         result.push_str(base);
         first = false;
     }
-    result.push_str("]");
+    result.push(']');
     result
 }
 
@@ -1814,6 +1814,7 @@ fn run_detailed_memory_benchmarks(langs: &[LangBench]) -> Vec<TableRow> {
 fn run_incremental_detail_benchmarks(langs: &[LangBench], iterations: usize) -> Vec<TableRow> {
     let mut rows = Vec::new();
 
+    #[allow(clippy::type_complexity)]
     let edit_types: &[(&str, fn(&str) -> String)] = &[
         ("insert char", |s: &str| {
             let mid = s.len() / 2;
