@@ -132,6 +132,15 @@ Statements :=
 
 Quantifiers attach to the preceding **token** (rule name or literal form as tokenized). Prefer naming helper rules for complex quantified groups.
 
+Quantifiers can also be applied directly to **literals**:
+
+```
+ParameterList :=
+    Parameter ("," Parameter)* ","?
+```
+
+`","?` means the trailing comma is optional. The quantifier attaches to the literal directly.
+
 ### Literals
 
 Double-quoted strings:

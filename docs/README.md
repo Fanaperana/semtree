@@ -23,6 +23,18 @@ Then pick a how-to for your project:
 - [Apply SemTree to any project](how-to/apply-to-any-project.md)
 - [Build a Neovim LSP for your language](how-to/neovim-lsp.md)
 - [Use the `semtree` CLI](how-to/use-the-cli.md)
+- [Import a Tree-sitter grammar](how-to/import-tree-sitter.md)
+
+## Bindings
+
+SemTree can be used from multiple languages:
+
+| Language | Location | Status |
+|----------|----------|--------|
+| Rust | `crates/` | Primary |
+| Python | `bindings/python/` (PyO3) | Functional |
+| C/C++ | `crates/semtree_ffi/` | Stable |
+| WASM | `crates/semtree_wasm/` | Available |
 
 ---
 

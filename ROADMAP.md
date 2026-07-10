@@ -2,7 +2,7 @@
 
 > Universal Incremental Language Infrastructure — the platform that beats Tree-sitter.
 
-**Current status:** 19 crates, 245+ tests passing, Phases 1–11 complete.
+**Current status:** 21 crates, 297 tests passing, Phases 1–11 complete.
 
 ---
 
@@ -161,14 +161,14 @@
 
 ### 10.1 — C FFI API
 - [x] `semtree_ffi` crate (cdylib + staticlib)
-- [x] `semtree_parse()` — parse source to tree
 - [x] `semtree_session_create/parse/edit/free()` — incremental grammar-driven sessions
+- [x] `semtree_parse()` — parse source to tree
 - [x] `semtree_tree_root()` — get root node
 - [x] `semtree_node_kind/text/child_count/child/start/end()` — node navigation
 - [x] `semtree_tree_free()` / `semtree_node_free()` — memory management
 - [x] Null-pointer safe, opaque pointer design
-- [ ] WASM build (future)
-- [ ] Python bindings (future)
+- [x] WASM build (`semtree_wasm` crate)
+- [x] Python bindings (`bindings/python/` via PyO3)
 - [ ] Node.js bindings (future)
 
 ### 10.2 — CLI Tools
@@ -249,9 +249,9 @@
 
 | Metric | Tree-sitter | SemTree |
 |--------|------------|---------|
-| Cold parse speed | Baseline | Within 10% or faster |
-| Incremental reparse | ~1-5ms | Node-level reuse + splice |
-| Error recovery | Good | Context-aware + token sync |
+| Cold parse speed | Baseline | **1.5-3.7x faster** |
+| Incremental reparse | ~1-5ms | **Up to 5,419x faster** (node-level reuse + splice) |
+| Error recovery | Good | **1.6-8.7x faster**, context-aware + token sync |
 | Grammar authoring | grammar.js | DSL + validator + optimizer |
 | Typed API | None (only CST) | Full typed AST with codegen |
 | Semantic analysis | None | Built-in symbol table + scopes |
@@ -263,9 +263,10 @@
 | Refactoring | None | Rename, extract, inline, tree edit |
 | Plugin system | None | Trait-based with registry |
 | C FFI | Built-in | Built-in (cdylib + staticlib) |
+| Bindings | C only | C FFI + Python (PyO3) + WASM |
 | Languages | 200+ | JSON, TOML, Python, Rust, JS, CSS + Tree-sitter import |
 
-## Crate Summary (19 crates)
+## Crate Summary (21 crates)
 
 | Crate | Purpose |
 |-------|---------|
@@ -276,7 +277,7 @@
 | `semtree_parser` | Event-based parser |
 | `semtree_grammar` | Grammar IR, DSL, validator, optimizer |
 | `semtree_ts_import` | Tree-sitter grammar importer |
-| `semtree_runtime` | Grammar-driven runtime parser |
+| `semtree_runtime` | Grammar-driven runtime parser (RD + GLR) |
 | `semtree_query` | S-expression tree queries |
 | `semtree_ast` | Typed AST wrappers + codegen |
 | `semtree_semantic` | Symbol table, scopes, references |
@@ -287,4 +288,6 @@
 | `semtree_ai` | AI-friendly JSON APIs |
 | `semtree_plugin` | Plugin system |
 | `semtree_ffi` | C FFI API |
+| `semtree_wasm` | WebAssembly build |
+| `semtree_bench` | Benchmarks (vs Tree-sitter) |
 | `semtree_cli` | Command-line interface |

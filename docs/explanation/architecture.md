@@ -20,6 +20,7 @@ SemTree is a Cargo workspace of focused crates. The important idea: **one gramma
 | Analyze | `query`, `ast`, `semantic` | Queries, typed AST, symbols |
 | Tools | `format`, `lint`, `ide`, `refactor` | Product features |
 | Integrate | `ai`, `plugin`, `ffi`, `cli` | Embeddings + CLI |
+| Distribute | `wasm`, `bench` | WASM target + benchmarks |
 
 ## Why this shape
 

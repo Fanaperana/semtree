@@ -8,12 +8,13 @@
 
 [![Rust](https://img.shields.io/badge/Rust-1.85%2B-orange?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Crates](https://img.shields.io/badge/Crates-19-brightgreen)](ROADMAP.md)
-[![Tests](https://img.shields.io/badge/Tests-52%2B_passing-success)](https://github.com/Fanaperana/semtree)
+[![Crates](https://img.shields.io/badge/Crates-21-brightgreen)](ROADMAP.md)
+[![Tests](https://img.shields.io/badge/Tests-297_passing-success)](https://github.com/Fanaperana/semtree)
 [![GLR](https://img.shields.io/badge/Parser-RD_%2B_GLR-blueviolet)]()
 [![Languages](https://img.shields.io/badge/Grammars-6_languages-ff69b4)]()
 [![Neovim](https://img.shields.io/badge/Neovim-Plugin-57A143?logo=neovim&logoColor=white)]()
 [![WASM](https://img.shields.io/badge/WASM-Ready-624DE5?logo=webassembly&logoColor=white)]()
+[![Python](https://img.shields.io/badge/Python-Bindings-3776AB?logo=python&logoColor=white)]()
 
 ---
 
@@ -35,6 +36,7 @@
 | **Parse speed** | Baseline | **1.5-3.7x faster** |
 | **Incremental** | Edit + reparse | **Up to 5,419x faster** on deletions |
 | **Setup** | Install per-language parser | One binary, all languages |
+| **Bindings** | C only | C FFI + Python (PyO3) + WASM |
 | **Grammar format** | JavaScript DSL | Clean declarative DSL |
 | **Parser algorithms** | LR + GLR | Recursive Descent + GLR |
 | **Language** | C | Rust |
@@ -236,7 +238,7 @@ Source Code --> Lexer --> Tokens --> Parser --> Green Tree --> Red Tree --> Type
                                               immutable
 ```
 
-### 19 Crates
+### 21 Crates
 
 | Layer | Crates |
 |-------|--------|
@@ -245,6 +247,7 @@ Source Code --> Lexer --> Tokens --> Parser --> Green Tree --> Red Tree --> Type
 | **Analysis** | `semtree_query` · `semtree_ast` · `semtree_semantic` |
 | **Tooling** | `semtree_format` · `semtree_lint` · `semtree_ide` · `semtree_refactor` |
 | **Integration** | `semtree_ai` · `semtree_plugin` · `semtree_ffi` · `semtree_cli` |
+| **Distribution** | `semtree_wasm` · `semtree_bench` |
 
 ### Parser Backends
 
@@ -272,7 +275,7 @@ See [ROADMAP.md](ROADMAP.md) for the full roadmap. Phases 1-11 are complete:
 - [x] Phase 5: Language ecosystem (6 grammars)
 - [x] Phase 6-7: IDE services, refactoring API
 - [x] Phase 8-9: AI APIs, plugin system
-- [x] Phase 10: C FFI, CLI tools
+- [x] Phase 10: C FFI, CLI tools, Python bindings
 - [x] Phase 11: GLR/RNGLR parser engine
 
 ---
