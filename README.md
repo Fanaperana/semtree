@@ -64,11 +64,11 @@ Ratio is SemTree median ÷ tree-sitter median (**faster** = SemTree quicker).
 
 | Language | 1 KB | 10 KB | 100 KB | 1 MB |
 |----------|------|-------|--------|------|
-| **JSON** | 2.4x faster | 2.4x faster | 2.4x faster | 2.3x faster |
-| **CSS** | 2.5x faster | 2.8x faster | 1.5x faster | 4.2x slower |
-| **Python** | 1.2x slower | 1.1x slower | 1.1x slower | 1.1x slower |
-| **JavaScript** | 1.3x slower | 1.3x slower | 1.7x slower | 6.1x slower |
-| **Rust** | 2.0x slower | 2.0x slower | 2.2x slower | 5.1x slower |
+| **JSON** | 2.3x faster | 2.3x faster | 2.3x faster | 2.5x faster |
+| **CSS** | 2.1x faster | 2.5x faster | 1.4x faster | 4.1x slower |
+| **Python** | 1.2x slower | 1.1x slower | 1.04x slower | 1.03x slower |
+| **JavaScript** | 1.2x slower | 1.2x slower | 1.6x slower | 6.1x slower |
+| **Rust** | 2.0x slower | 1.9x slower | 2.1x slower | 4.9x slower |
 
 SemTree's recursive-descent runtime is faster on simpler grammars (JSON, CSS) but slower on the
 richer ones, and scaling degrades on very large (1 MB) inputs. Faster parsing on complex grammars
@@ -113,10 +113,11 @@ number of error regions (e.g. Rust, Python).
 
 ### Memory
 
-SemTree currently uses **more** memory than tree-sitter — it builds more granular trees. Node
-elision (single-child precedence-chain collapse) has cut the gap substantially (JS/Rust/Python
-node counts down ~30–40%), but there's more to do (compact/interned node storage). Reducing node
-count and bytes-per-node is tracked in ROADMAP 15.A/15.B.
+SemTree currently uses **more** memory than tree-sitter — it builds more granular trees. Two things
+help: node elision (single-child precedence-chain collapse) cut structural node counts ~30–40%, and
+green-node **interning** shares identical subtrees/tokens as a single allocation (big wins on
+repetitive code and across incremental edits). The remaining gap is the per-node `Arc` + `Vec`
+double allocation, which needs a compact thin-pointer node layout (ROADMAP 15.A).
 
 | Language (10 KB) | Tree-sitter nodes | SemTree nodes |
 |------------------|-------------------|---------------|
@@ -125,6 +126,9 @@ count and bytes-per-node is tracked in ROADMAP 15.A/15.B.
 | Python | 4,423 | 16,944 |
 | JavaScript | 4,577 | 19,144 |
 | Rust | 4,222 | 20,080 |
+
+(Structural node counts shown — they're input-independent. Interning reduces *distinct allocations*
+further, but by how much depends on how repetitive the source is.)
 
 ### Features Only SemTree Has
 

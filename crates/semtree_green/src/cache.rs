@@ -3,7 +3,7 @@ use smol_str::SmolStr;
 
 use semtree_core::SyntaxKind;
 
-use crate::node::{GreenElement, GreenNode, GreenToken};
+use crate::node::{GreenElement, GreenNode, GreenToken, NodeOrToken};
 
 /// Caches green nodes and tokens to enable structural sharing.
 ///
@@ -12,7 +12,6 @@ use crate::node::{GreenElement, GreenNode, GreenToken};
 #[derive(Debug)]
 pub struct NodeCache {
     tokens: FxHashMap<(SyntaxKind, SmolStr), GreenToken>,
-    #[allow(dead_code)]
     nodes: FxHashMap<(SyntaxKind, u64), GreenNode>,
 }
 
@@ -37,19 +36,39 @@ impl NodeCache {
     }
 
     pub fn node(&mut self, kind: SyntaxKind, children: Vec<GreenElement>) -> GreenNode {
-        // Skip cache for cold parses — hashing all children + HashMap lookup
-        // is pure overhead when subtrees are rarely repeated.
-        // The cache is most useful for incremental re-parsing.
-        GreenNode::new(kind, children)
+        // Compute the structural hash from the children's precomputed hashes
+        // (O(children)) so we can dedup identical subtrees without allocating.
+        let hash = crate::node::structural_hash(kind, &children);
+        if let Some(existing) = self.nodes.get(&(kind, hash)) {
+            // Verify with a shallow identity check to guard against hash
+            // collisions. Because children are themselves interned bottom-up,
+            // identical child subtrees share the same Arc, so this is O(children).
+            if shallow_eq(existing, kind, &children) {
+                return existing.clone();
+            }
+        }
+        let node = GreenNode::with_hash(kind, children, hash);
+        self.nodes.insert((kind, hash), node.clone());
+        node
     }
+}
 
-    #[allow(dead_code)]
-    fn hash_children(&self, children: &[GreenElement]) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = rustc_hash::FxHasher::default();
-        children.hash(&mut hasher);
-        hasher.finish()
+/// Shallow structural equality: same kind, same child count, and each child is
+/// pointer-identical (nodes) or value-equal (tokens). O(children) because child
+/// subtrees are interned and therefore Arc-shared when identical.
+fn shallow_eq(existing: &GreenNode, kind: SyntaxKind, children: &[GreenElement]) -> bool {
+    if existing.kind() != kind {
+        return false;
     }
+    let ec = existing.children();
+    if ec.len() != children.len() {
+        return false;
+    }
+    ec.iter().zip(children).all(|(a, b)| match (a, b) {
+        (NodeOrToken::Node(x), NodeOrToken::Node(y)) => x.ptr_eq(y),
+        (NodeOrToken::Token(x), NodeOrToken::Token(y)) => x == y,
+        _ => false,
+    })
 }
 
 impl Default for NodeCache {

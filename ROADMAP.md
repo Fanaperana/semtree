@@ -377,11 +377,17 @@
 > allocation/backtracking work, not node elision alone.
 
 
-### 15.A — Compact, interned green/red trees
-- [ ] Evaluate adopting [`cstree`](https://github.com/domenicquirl/cstree) 0.14 (interned tokens, compact storage, pre-hashed subtrees, `Send + Sync` red trees) vs. incrementally hardening the current trees
-- [ ] If keeping our trees (A2): intern token text via `lasso` (store `u32` key, not `SmolStr`), pack children into an arena (`bumpalo`) or thin-pointer layout, pre-hash subtrees for the cache
-- [ ] Eliminate the per-node `Arc` + per-node `Vec` double allocation (`node.rs`) — the memory-bloat root cause
-- [ ] Re-benchmark memory: target within ~2x of tree-sitter node bytes (currently up to 10x)
+### 15.A — Compact, interned green/red trees 🟡 (partial)
+- [x] Pre-hashed structural sharing: each `GreenNode` stores a precomputed structural hash, and `NodeCache` now dedups identical subtrees in O(children) (verified by Arc pointer-equality). Identical subtrees/tokens share one allocation. Cold parse is **neutral-to-positive** on the (repetitive) benchmark — Python 1 MB went 1.24x slower → parity — and correctness holds across all 200+ tests.
+- [x] Honest memory measurement: `semtree_bench` now reports *distinct interned green-node* allocations, with an explicit caveat that the synthetic repetitive generators make that figure a best case (real code has distinct ≈ structural).
+- [ ] Eliminate the per-node `Arc` + per-node `Vec` **double allocation** — needs a thin-pointer / DST node layout (rowan/cstree style) or adopting [`cstree`](https://github.com/domenicquirl/cstree) 0.14. This is the real fix for the 1 MB cold-parse cliff on complex grammars (JS/Rust still 5–6x slower) and for worst-case memory; it is a larger, multi-crate migration that changes the public `GreenNode`/`SyntaxNode` types and should be its own reviewed effort.
+- [ ] Intern token *text* via `lasso` (store a `u32` key) if not adopting cstree.
+- [ ] Re-benchmark memory on a **non-repetitive** corpus (ties into 12.3) so the numbers are representative.
+
+> **Result (15.A partial):** structural sharing landed safely (correct, no cold-parse regression, real
+> heap savings on repetitive/incremental workloads). The double-allocation-per-node cost and the JS/Rust
+> 1 MB cliff remain — those need the DST/cstree layout change, deferred as a dedicated migration.
+
 
 ### 15.D — Real incremental subtree reuse (turns SpliceMiss → hit) ✅
 - [x] Replace the whole-tree rebuild in `IncrementalParser` with **path copying** via `GreenNode::replace_child` — `splice_node` descends to the deepest node containing the edit and rebuilds only the ancestor spine (untouched siblings are Arc-cloned)

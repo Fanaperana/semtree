@@ -6,6 +6,7 @@ use semtree_format::Formatter;
 use semtree_grammar::Grammar;
 use semtree_lint::LintEngine;
 use semtree_query::{QueryEngine, QueryPattern};
+use semtree_green::{GreenNode, NodeOrToken};
 use semtree_red::{Preorder, SyntaxNode};
 use semtree_runtime::{IncrementalParser, RuntimeParser};
 use semtree_semantic::SemanticModel;
@@ -435,6 +436,27 @@ fn ts_count_nodes(tree: &tree_sitter::Tree) -> usize {
 fn st_count_nodes(root: &SyntaxNode) -> usize {
     let preorder = Preorder::new(root);
     preorder.count()
+}
+
+/// Count *distinct* green-node allocations, following the interned (Arc-shared)
+/// green tree so identical subtrees are counted once. This reflects real heap
+/// usage, unlike the structural (red) node count which visits shared nodes
+/// repeatedly.
+fn st_distinct_green_nodes(root: &GreenNode) -> usize {
+    use std::collections::HashSet;
+    let mut seen: HashSet<usize> = HashSet::new();
+    let mut stack = vec![root.clone()];
+    while let Some(n) = stack.pop() {
+        if !seen.insert(n.id()) {
+            continue;
+        }
+        for c in n.children() {
+            if let NodeOrToken::Node(child) = c {
+                stack.push(child.clone());
+            }
+        }
+    }
+    seen.len()
 }
 
 // ─── Output Formatting ──────────────────────────────────────────────────────
@@ -1059,8 +1081,11 @@ fn run_detailed_memory_benchmarks(langs: &[LangBench]) -> Vec<TableRow> {
             let st_parse = parser.parse(&source);
             let st_root = st_parse.syntax();
             let st_nodes = st_count_nodes(&st_root);
-            let st_bytes_per_node = 64usize; // SmolStr(24) + children Vec(24) + kind(2) + len(4) + Arc overhead(~10)
-            let st_total = st_nodes * st_bytes_per_node;
+            let st_distinct = st_distinct_green_nodes(st_root.green());
+            let st_bytes_per_node = 64usize; // SmolStr(24) + children Vec(24) + kind(2) + len(4) + hash(8) + Arc overhead
+            // Real heap is driven by *distinct* interned allocations, not the
+            // structural node count (identical subtrees share one allocation).
+            let st_total = st_distinct * st_bytes_per_node;
             let st_ratio_to_src = st_total as f64 / actual_bytes as f64;
 
             rows.push(TableRow {
@@ -1072,7 +1097,8 @@ fn run_detailed_memory_benchmarks(langs: &[LangBench]) -> Vec<TableRow> {
                     ts_ratio_to_src
                 ),
                 st_result: format!(
-                    "{} nodes, ~{}KB ({:.1}x src)",
+                    "{} distinct ({} struct), ~{}KB ({:.1}x src)",
+                    st_distinct,
                     st_nodes,
                     st_total / 1024,
                     st_ratio_to_src
@@ -1278,7 +1304,10 @@ fn main() {
     println!("    SemTree IncrementalParser::update). [✓] = incremental tree reproduces the");
     println!("    edited source losslessly; 'full' = SemTree full reparse, shown for reference");
     println!("  - All times are median of {iterations} iterations, --release build");
-    println!("  - Memory estimates use 48 bytes/node (TS) and 64 bytes/node (SemTree)");
+    println!("  - Memory: 'distinct' = unique interned green-node allocations; 'struct' = structural");
+    println!("    (red) node count. WARNING: the generated sources repeat identical blocks, so green");
+    println!("    interning collapses 'distinct' to an unrealistically low number. Real (non-repetitive)");
+    println!("    code has distinct ≈ struct; treat these memory figures as a best case, not typical.");
 }
 
 fn print_computed_summary(parse_rows: &[TableRow], incr_rows: &[TableRow], mem_rows: &[TableRow]) {
