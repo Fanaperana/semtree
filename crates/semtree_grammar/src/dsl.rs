@@ -197,7 +197,29 @@ impl<'a> DslParser<'a> {
 
             if tok.starts_with('"') && tok.ends_with('"') && tok.len() >= 2 {
                 let literal = &tok[1..tok.len() - 1];
-                exprs.push(RuleExpr::Literal(literal.into()));
+                let lit_expr = RuleExpr::Literal(literal.into());
+                // Check for postfix modifier on literal: ","? or ";"* etc.
+                if i + 1 < tokens.len() {
+                    match tokens[i + 1].as_str() {
+                        "?" => {
+                            exprs.push(RuleExpr::Optional(Box::new(lit_expr)));
+                            i += 2;
+                            continue;
+                        }
+                        "*" => {
+                            exprs.push(RuleExpr::Repeat(Box::new(lit_expr)));
+                            i += 2;
+                            continue;
+                        }
+                        "+" => {
+                            exprs.push(RuleExpr::Repeat1(Box::new(lit_expr)));
+                            i += 2;
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
+                exprs.push(lit_expr);
             } else if tok.ends_with('*') && tok.len() > 1 {
                 let inner = &tok[..tok.len() - 1];
                 exprs.push(RuleExpr::Repeat(Box::new(RuleExpr::RuleRef(inner.into()))));
@@ -219,7 +241,13 @@ impl<'a> DslParser<'a> {
                 let rest_tokens = &tokens[i + 1..];
                 let rest_line = rest_tokens.join(" ");
                 let right = self.parse_expr_line(&rest_line, fields);
-                return RuleExpr::Choice(vec![left, right]);
+                // Flatten nested Choice to produce a flat list of alternatives.
+                let mut alts = vec![left];
+                match right {
+                    RuleExpr::Choice(inner_alts) => alts.extend(inner_alts),
+                    other => alts.push(other),
+                }
+                return RuleExpr::Choice(alts);
             } else {
                 exprs.push(RuleExpr::RuleRef(tok.as_str().into()));
             }
@@ -376,5 +404,70 @@ Rule :=
 "#;
         let grammar = parse_semtree_dsl(input).unwrap();
         assert_eq!(grammar.format_hints.len(), 3);
+    }
+
+    #[test]
+    fn literal_optional_modifier() {
+        let input = r#"
+language test
+
+Rule :=
+    "{" Item* ","? "}"
+"#;
+        let grammar = parse_semtree_dsl(input).unwrap();
+        let rule = grammar.rules.get("Rule").unwrap();
+        match &rule.expr {
+            RuleExpr::Seq(parts) => {
+                // Should have 4 parts: "{", Item*, ","?, "}"
+                assert_eq!(parts.len(), 4, "expected 4 seq parts, got {:?}", parts);
+                assert!(
+                    matches!(&parts[2], RuleExpr::Optional(inner)
+                        if matches!(inner.as_ref(), RuleExpr::Literal(s) if s == ",")),
+                    "expected Optional(Literal(\",\")), got: {:?}",
+                    parts[2]
+                );
+            }
+            other => panic!("expected Seq, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn choice_is_flat() {
+        let input = r#"
+language test
+
+Rule :=
+    A | B | C | D
+"#;
+        let grammar = parse_semtree_dsl(input).unwrap();
+        let rule = grammar.rules.get("Rule").unwrap();
+        match &rule.expr {
+            RuleExpr::Choice(alts) => {
+                assert_eq!(alts.len(), 4, "should be flat 4-way choice, got {:?}", alts);
+                for alt in alts {
+                    assert!(matches!(alt, RuleExpr::RuleRef(_)), "all alts should be RuleRef");
+                }
+            }
+            other => panic!("expected Choice, got: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn multi_line_choice_is_flat() {
+        let input = r#"
+language test
+
+Rule :=
+    A | B | C
+    | D | E
+"#;
+        let grammar = parse_semtree_dsl(input).unwrap();
+        let rule = grammar.rules.get("Rule").unwrap();
+        match &rule.expr {
+            RuleExpr::Choice(alts) => {
+                assert_eq!(alts.len(), 5, "should be flat 5-way choice, got {:?}", alts);
+            }
+            other => panic!("expected Choice, got: {other:?}"),
+        }
     }
 }

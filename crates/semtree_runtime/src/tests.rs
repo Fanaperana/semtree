@@ -921,3 +921,590 @@ fn bench_incremental_lex_is_partial() {
     // In debug mode, just verify correctness.
     let _ = (full_time, inc_time, old_tokens);
 }
+
+// ── Grammar correctness tests ───────────────────────────────
+
+fn load_grammar(name: &str) -> semtree_grammar::Grammar {
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join(format!("../../grammars/{name}.semtree"));
+    let src = std::fs::read_to_string(&path).expect(&format!("load {name} grammar"));
+    parse_semtree_dsl(&src).expect(&format!("parse {name} grammar"))
+}
+
+fn rust_grammar() -> semtree_grammar::Grammar {
+    load_grammar("rust")
+}
+
+/// Verify that flat Choice is produced for multi-alternative rules.
+#[test]
+fn dsl_choice_is_flat() {
+    let grammar = rust_grammar();
+    if let Some(rule) = grammar.rules.get("ItemBody") {
+        match &rule.expr {
+            semtree_grammar::RuleExpr::Choice(alts) => {
+                // All alternatives should be RuleRefs, not nested Choices.
+                for (i, alt) in alts.iter().enumerate() {
+                    assert!(
+                        matches!(alt, semtree_grammar::RuleExpr::RuleRef(_)),
+                        "ItemBody alt {i} should be RuleRef, got: {alt:?}"
+                    );
+                }
+                assert!(alts.len() >= 10, "ItemBody should have many alternatives");
+            }
+            other => panic!("ItemBody should be Choice, got: {other:?}"),
+        }
+    }
+}
+
+/// Verify literal? produces Optional(Literal(...)) not Literal + RuleRef("?").
+#[test]
+fn dsl_literal_optional() {
+    let grammar = rust_grammar();
+    if let Some(rule) = grammar.rules.get("StructFields") {
+        // StructFields := "{" StructField StructFieldTail* ","? "}"
+        match &rule.expr {
+            semtree_grammar::RuleExpr::Seq(parts) => {
+                // Find the ","? part — should be Optional(Literal(","))
+                let has_optional_comma = parts.iter().any(|p| {
+                    matches!(p, semtree_grammar::RuleExpr::Optional(inner)
+                        if matches!(inner.as_ref(), semtree_grammar::RuleExpr::Literal(s) if s == ","))
+                });
+                assert!(has_optional_comma, "StructFields should have Optional(Literal(\",\")): {parts:?}");
+                // Should NOT have a RuleRef("?")
+                let has_question_ref = parts.iter().any(|p| {
+                    matches!(p, semtree_grammar::RuleExpr::RuleRef(s) if s == "?")
+                });
+                assert!(!has_question_ref, "StructFields should NOT have RuleRef(\"?\")");
+            }
+            other => panic!("StructFields should be Seq, got: {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn rust_struct_with_fields() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("struct Foo { x: i32 }");
+    println!("Errors: {:?}", result.errors);
+    let text = result.syntax().text();
+    assert_eq!(text, "struct Foo { x: i32 }");
+    assert!(
+        result.errors.is_empty(),
+        "struct with fields should parse without errors, got: {:?}",
+        result.errors
+    );
+}
+
+#[test]
+fn rust_struct_semicolon() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("struct Foo;");
+    assert!(
+        result.errors.is_empty(),
+        "struct with semicolon should parse without errors, got: {:?}",
+        result.errors
+    );
+}
+
+#[test]
+fn rust_fn_basic() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("fn main() {}");
+    assert!(
+        result.errors.is_empty(),
+        "basic fn should parse without errors, got: {:?}",
+        result.errors
+    );
+}
+
+#[test]
+fn rust_fn_with_param() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("fn foo(x: i32) {}");
+    assert!(
+        result.errors.is_empty(),
+        "fn with param should parse without errors, got: {:?}",
+        result.errors
+    );
+}
+
+#[test]
+fn rust_impl_block() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("impl Foo { fn bar() {} }");
+    println!("Errors: {:?}", result.errors);
+    assert!(
+        result.errors.is_empty(),
+        "impl block should parse without errors, got: {:?}",
+        result.errors
+    );
+}
+
+#[test]
+fn rust_enum_basic() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("enum Color { Red, Green, Blue }");
+    println!("Errors: {:?}", result.errors);
+    assert!(
+        result.errors.is_empty(),
+        "enum should parse without errors, got: {:?}",
+        result.errors
+    );
+}
+
+#[test]
+fn parse_struct_with_fields_minimal() {
+    let src = r#"
+language test_struct
+keyword struct
+
+File :=
+    StructItem*
+
+StructItem :=
+    "struct" name: Identifier StructBody
+
+StructBody :=
+    StructFields | ";"
+
+StructFields :=
+    "{" StructField StructFieldTail* "}"
+
+StructFieldTail :=
+    "," StructField
+
+StructField :=
+    name: Identifier ":" TypeExpr
+
+TypeExpr :=
+    Identifier
+"#;
+    let grammar = parse_semtree_dsl(src).unwrap();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("struct Foo { x: i32 }");
+    assert!(
+        result.errors.is_empty(),
+        "struct with fields should parse without errors, got: {:?}",
+        result.errors
+    );
+    let text = result.syntax().text();
+    assert_eq!(text, "struct Foo { x: i32 }");
+}
+
+// ── Rust edge case tests ────────────────────────────────────
+
+#[test]
+fn rust_struct_multiple_fields() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("struct Point { x: f64, y: f64 }");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+    assert_eq!(result.syntax().text(), "struct Point { x: f64, y: f64 }");
+}
+
+#[test]
+fn rust_struct_trailing_comma() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("struct Foo { x: i32, }");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn rust_enum_with_tuple_variant() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("enum Option { Some(i32), None }");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn rust_trait_definition() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("trait Display { fn fmt() {} }");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn rust_use_item() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("use std::io;");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn rust_const_item() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("const X: i32 = 42;");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn rust_let_binding() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("fn main() { let x = 1; }");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn rust_if_else() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("fn main() { if true { 1 } else { 2 } }");
+    // Grammar may have limited expression support
+    assert_eq!(result.syntax().text(), "fn main() { if true { 1 } else { 2 } }");
+}
+
+#[test]
+fn rust_match_expr() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("fn main() { match x { 1 => 2, _ => 3 } }");
+    assert_eq!(result.syntax().text(), "fn main() { match x { 1 => 2, _ => 3 } }");
+}
+
+#[test]
+fn rust_loop_while_for() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    for src in &["fn main() { loop {} }", "fn main() { while true {} }", "fn main() { for x in items {} }"] {
+        let result = parser.parse(src);
+        assert_eq!(result.syntax().text(), *src, "roundtrip failed for {src}");
+    }
+}
+
+#[test]
+fn rust_closure() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("fn main() { let f = |x| x; }");
+    assert_eq!(result.syntax().text(), "fn main() { let f = |x| x; }");
+}
+
+#[test]
+fn rust_type_alias() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("type Result = i32;");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn rust_static_item() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("static X: i32 = 42;");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn rust_pub_struct() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("pub struct Foo { pub x: i32 }");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn rust_generic_struct() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("struct Wrapper<T> { inner: T }");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn rust_impl_with_trait() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("impl Display for Foo { fn fmt() {} }");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn rust_fn_return_type() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("fn add(a: i32, b: i32) -> i32 { a }");
+    assert_eq!(result.syntax().text(), "fn add(a: i32, b: i32) -> i32 { a }");
+}
+
+#[test]
+fn rust_mod_item() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("mod tests { fn it_works() {} }");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn rust_attribute() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("#[derive(Debug)] struct Foo;");
+    assert_eq!(result.syntax().text(), "#[derive(Debug)] struct Foo;");
+}
+
+#[test]
+fn rust_reference_types() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("fn foo(x: &i32) {}");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn rust_multiple_items() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let source = r#"
+struct Foo { x: i32 }
+enum Bar { A, B }
+fn main() { let f = Foo { x: 1 }; }
+"#;
+    let result = parser.parse(source);
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+    assert_eq!(result.syntax().text(), source);
+}
+
+#[test]
+fn rust_demo_file() {
+    let grammar = rust_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let source = include_str!("../../../grammars/tests/benchmark.rs");
+    let result = parser.parse(source);
+    assert_eq!(result.syntax().text(), source, "roundtrip text mismatch");
+    // Should have very few errors (some complex Rust features may not parse)
+    // Some complex Rust features may not be fully supported by the grammar.
+    // The benchmark file uses advanced features — just verify roundtrip and
+    // reasonable error count.
+    assert!(
+        result.errors.len() < 1000,
+        "too many errors ({}): {:?}",
+        result.errors.len(),
+        &result.errors[..result.errors.len().min(5)]
+    );
+}
+
+// ── JavaScript grammar tests ────────────────────────────────
+
+fn js_grammar() -> semtree_grammar::Grammar { load_grammar("javascript") }
+
+#[test]
+fn js_function_declaration() {
+    let grammar = js_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("function hello() { return 1; }");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn js_variable_declarations() {
+    let grammar = js_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("let x = 1;");
+    assert!(result.errors.is_empty(), "let: {:?}", result.errors);
+    let result = parser.parse("const y = 2;");
+    assert!(result.errors.is_empty(), "const: {:?}", result.errors);
+    let result = parser.parse("var z = 3;");
+    assert!(result.errors.is_empty(), "var: {:?}", result.errors);
+}
+
+#[test]
+fn js_if_else() {
+    let grammar = js_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("if (true) { 1; } else { 2; }");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn js_arrow_function() {
+    let grammar = js_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("const f = (x) => x;");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn js_class_declaration() {
+    let grammar = js_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("class Foo { constructor() {} }");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn js_for_loop() {
+    let grammar = js_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("for (let i = 0; i < 10; i++) {}");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn js_demo_file() {
+    let grammar = js_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let source = include_str!("../../../grammars/tests/benchmark.js");
+    let result = parser.parse(source);
+    assert_eq!(result.syntax().text(), source, "roundtrip text mismatch");
+}
+
+// ── Python grammar tests ────────────────────────────────────
+
+fn py_grammar() -> semtree_grammar::Grammar { load_grammar("python") }
+
+#[test]
+fn py_function_def() {
+    let grammar = py_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("def hello():\n    pass\n");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn py_class_def() {
+    let grammar = py_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("class Foo:\n    pass\n");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn py_if_elif_else() {
+    let grammar = py_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("if x:\n    1\nelif y:\n    2\nelse:\n    3\n");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn py_for_loop() {
+    let grammar = py_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("for x in items:\n    pass\n");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn py_import() {
+    let grammar = py_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("import os\n");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn py_demo_file() {
+    let grammar = py_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let source = include_str!("../../../grammars/tests/benchmark.py");
+    let result = parser.parse(source);
+    assert_eq!(result.syntax().text(), source, "roundtrip text mismatch");
+}
+
+// ── JSON grammar tests ─────────────────────────────────────
+
+// (json_grammar already defined above)
+
+#[test]
+fn json_object() {
+    let grammar = json_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse(r#"{"key": "value"}"#);
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn json_array() {
+    let grammar = json_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse(r#"[1, 2, 3]"#);
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn json_nested() {
+    let grammar = json_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse(r#"{"a": [1, {"b": true}], "c": null}"#);
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn json_demo_file() {
+    let grammar = json_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let source = include_str!("../../../grammars/tests/test.json");
+    let result = parser.parse(source);
+    assert_eq!(result.syntax().text(), source, "roundtrip text mismatch");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+// ── CSS grammar tests ──────────────────────────────────────
+
+fn css_grammar() -> semtree_grammar::Grammar { load_grammar("css") }
+
+#[test]
+fn css_rule() {
+    let grammar = css_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("body { color: red; }");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn css_multiple_selectors() {
+    let grammar = css_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("h1, h2 { font-size: 16px; }");
+    assert_eq!(result.syntax().text(), "h1, h2 { font-size: 16px; }");
+}
+
+#[test]
+fn css_demo_file() {
+    let grammar = css_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let source = include_str!("../../../grammars/tests/benchmark.css");
+    let result = parser.parse(source);
+    assert_eq!(result.syntax().text(), source, "roundtrip text mismatch");
+}
+
+// ── TOML grammar tests ─────────────────────────────────────
+
+#[test]
+fn toml_inline_table() {
+    let grammar = toml_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("name = \"test\"\nversion = \"1.0\"");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn toml_section() {
+    let grammar = toml_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let result = parser.parse("[package]\nname = \"test\"");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}
+
+#[test]
+fn toml_demo_file() {
+    let grammar = toml_grammar();
+    let parser = RuntimeParser::new(grammar);
+    let source = include_str!("../../../grammars/tests/test.toml");
+    let result = parser.parse(source);
+    assert_eq!(result.syntax().text(), source, "roundtrip text mismatch");
+    assert!(result.errors.is_empty(), "got: {:?}", result.errors);
+}

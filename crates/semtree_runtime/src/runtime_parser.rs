@@ -1350,7 +1350,15 @@ impl<'a> ParseContext<'a> {
             RuleExpr::Repeat(inner) => self.parse_repeat(inner),
             RuleExpr::Repeat1(inner) => self.parse_repeat1(inner),
             RuleExpr::Optional(inner) => {
-                self.parse_expr(inner);
+                let save_pos = self.pos;
+                let save_builder = self.builder.checkpoint();
+                let save_errors = self.errors.len();
+                if !self.parse_expr(inner) {
+                    // Rollback any partial progress.
+                    self.pos = save_pos;
+                    self.errors.truncate(save_errors);
+                    self.builder.rollback(save_builder);
+                }
                 true
             }
             RuleExpr::Field(_name, inner) => self.parse_expr(inner),
