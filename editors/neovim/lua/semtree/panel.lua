@@ -90,12 +90,18 @@ local function parse_sexp_ranges(lines)
 end
 
 --- Parse byte ranges from symbols output: `(start..end)`
+--- Since the built-in parser's byte offsets don't map correctly to the source,
+--- we search for the symbol name in the source buffer instead.
 local function parse_symbol_ranges(lines)
     local range_map = {}
+    local name_counts = {} -- track occurrence index for duplicate names
     for i, line in ipairs(lines) do
-        local s, e = line:match("%((%d+)%.%.(%d+)%)")
-        if s and e then
-            range_map[i] = { start_byte = tonumber(s), end_byte = tonumber(e) }
+        -- Extract kind and name: "  [pub ][mut ]kind name (start..end)"
+        local name = line:match("^%s*%S+%s+%S+%s+(%S+)%s+%(") -- "pub mut kind name"
+            or line:match("^%s*%S+%s+(%S+)%s+%(")              -- "kind name"
+        if name then
+            name_counts[name] = (name_counts[name] or 0) + 1
+            range_map[i] = { symbol_name = name, occurrence = name_counts[name] }
         end
     end
     return range_map
@@ -120,7 +126,7 @@ end
 --- @param source_buf number  The buffer containing the source code
 --- @param source_win number  The window showing the source code
 --- @param lines string[]     The display lines for the panel
---- @param range_map table    Map of line number → {start_byte, end_byte}
+--- @param range_map table    Map of line number → {start_byte, end_byte} or {symbol_name}
 --- @param opts table         {filetype: string, title: string}
 function M.open_panel(source_buf, source_win, lines, range_map, opts)
     opts = opts or {}
@@ -147,6 +153,54 @@ function M.open_panel(source_buf, source_win, lines, range_map, opts)
     local cursor_ns = vim.api.nvim_create_namespace("semtree_panel_cursor")
     local augroup = vim.api.nvim_create_augroup("SemTreePanel_" .. panel_buf, { clear = true })
 
+    --- Find a symbol by name in the source buffer and highlight it.
+    --- Uses occurrence to disambiguate duplicate names.
+    --- Returns (line_0indexed, col) or nil.
+    local function find_and_highlight_symbol(name, occurrence)
+        local source_lines = vim.api.nvim_buf_get_lines(source_buf, 0, -1, false)
+        local count = 0
+        for lnum, sline in ipairs(source_lines) do
+            local start = 1
+            while true do
+                local col = sline:find(name, start, true)
+                if not col then break end
+                -- Ensure it's a word boundary (not part of a larger identifier)
+                local before = col > 1 and sline:sub(col - 1, col - 1) or " "
+                local after_pos = col + #name
+                local after = after_pos <= #sline and sline:sub(after_pos, after_pos) or " "
+                if not before:match("[%w_]") and not after:match("[%w_]") then
+                    count = count + 1
+                    if count == (occurrence or 1) then
+                        vim.api.nvim_buf_clear_namespace(source_buf, hl_ns, 0, -1)
+                        local start_col = col - 1
+                        local end_col = start_col + #name
+                        pcall(vim.api.nvim_buf_set_extmark, source_buf, hl_ns, lnum - 1, start_col, {
+                            end_row = lnum - 1,
+                            end_col = end_col,
+                            hl_group = "SemTreeHighlight",
+                        })
+                        if vim.api.nvim_win_is_valid(source_win) then
+                            pcall(vim.api.nvim_win_set_cursor, source_win, { lnum, start_col })
+                        end
+                        return lnum - 1, start_col
+                    end
+                end
+                start = col + 1
+            end
+        end
+        return nil
+    end
+
+    --- Highlight source for a range_map entry.
+    local function highlight_entry(entry)
+        if not entry then return end
+        if entry.start_byte and entry.end_byte then
+            M.highlight_range(source_buf, source_win, entry.start_byte, entry.end_byte)
+        elseif entry.symbol_name then
+            find_and_highlight_symbol(entry.symbol_name, entry.occurrence)
+        end
+    end
+
     -- Highlight source on cursor movement
     vim.api.nvim_create_autocmd("CursorMoved", {
         group = augroup,
@@ -154,10 +208,10 @@ function M.open_panel(source_buf, source_win, lines, range_map, opts)
         callback = function()
             local cursor = vim.api.nvim_win_get_cursor(panel_win)
             local line_nr = cursor[1]
-            local range = range_map[line_nr]
+            local entry = range_map[line_nr]
 
-            if range and vim.api.nvim_buf_is_valid(source_buf) and vim.api.nvim_win_is_valid(source_win) then
-                M.highlight_range(source_buf, source_win, range.start_byte, range.end_byte)
+            if entry and vim.api.nvim_buf_is_valid(source_buf) and vim.api.nvim_win_is_valid(source_win) then
+                highlight_entry(entry)
 
                 -- Highlight current line in panel
                 vim.api.nvim_buf_clear_namespace(panel_buf, cursor_ns, 0, -1)
@@ -188,11 +242,15 @@ function M.open_panel(source_buf, source_win, lines, range_map, opts)
     -- Enter: jump to source location
     vim.keymap.set("n", "<CR>", function()
         local cursor = vim.api.nvim_win_get_cursor(panel_win)
-        local range = range_map[cursor[1]]
-        if range and vim.api.nvim_win_is_valid(source_win) then
+        local entry = range_map[cursor[1]]
+        if entry and vim.api.nvim_win_is_valid(source_win) then
             vim.api.nvim_set_current_win(source_win)
-            local line, col = M.byte_to_pos(source_buf, range.start_byte)
-            vim.api.nvim_win_set_cursor(source_win, { line + 1, col })
+            if entry.start_byte then
+                local line, col = M.byte_to_pos(source_buf, entry.start_byte)
+                vim.api.nvim_win_set_cursor(source_win, { line + 1, col })
+            elseif entry.symbol_name then
+                find_and_highlight_symbol(entry.symbol_name, entry.occurrence)
+            end
         end
     end, keymap_opts)
 
