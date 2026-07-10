@@ -105,10 +105,13 @@ impl GlrErrorRecovery {
         }
 
         // Create error SPPF node wrapping skipped tokens.
-        let error_range = TextRange::new(
-            tokens[start_idx].range.start(),
-            tokens[skip_idx.saturating_sub(1)].range.end(),
-        );
+        let range_start = tokens[start_idx].range.start();
+        let range_end = tokens[skip_idx.saturating_sub(1)].range.end();
+        let error_range = if range_start <= range_end {
+            TextRange::new(range_start, range_end)
+        } else {
+            TextRange::new(range_end, range_start)
+        };
         let _error_node = sppf.create_error(
             skipped_sppf_children,
             error_range,

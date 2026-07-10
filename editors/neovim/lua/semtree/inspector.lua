@@ -120,43 +120,12 @@ local function highlight_range(source_buf, source_win, start_byte, end_byte)
     end
 end
 
-function M.open(config)
-    local source_buf = vim.api.nvim_get_current_buf()
-    local source_win = vim.api.nvim_get_current_win()
-    local file = vim.api.nvim_buf_get_name(source_buf)
-
-    if file == "" then
-        vim.notify("Buffer has no file", vim.log.levels.ERROR)
-        return
-    end
-
-    -- Save the file first so the CLI sees the latest content
-    if vim.bo[source_buf].modified then
-        vim.cmd("write")
-    end
-
-    -- Run semtree with inspect format
-    local cmd = string.format("%s run %s -f inspect 2>/dev/null", config.binary_path, vim.fn.shellescape(file))
-    local raw_output = vim.fn.system(cmd)
-
-    if vim.v.shell_error ~= 0 then
-        vim.notify("SemTree parse failed: " .. raw_output, vim.log.levels.ERROR)
-        return
-    end
-
-    -- Parse the output
-    local raw_lines = vim.split(raw_output, "\n")
-    local nodes = {}
-    for _, line in ipairs(raw_lines) do
-        local node = parse_inspect_line(line)
-        if node then
-            -- Skip pure whitespace/newline leaves for cleaner display
-            if not (node.is_leaf and (node.kind == "whitespace" or node.kind == "newline")) then
-                table.insert(nodes, node)
-            end
-        end
-    end
-
+--- Build the inspector UI once we have parsed nodes.
+--- @param source_buf number
+--- @param source_win number
+--- @param file string
+--- @param nodes table[]
+local function show_inspector(source_buf, source_win, file, nodes)
     if #nodes == 0 then
         vim.notify("No tree nodes found", vim.log.levels.WARN)
         return
@@ -186,30 +155,43 @@ function M.open(config)
     vim.bo[tree_buf].filetype = "semtree-inspect"
     vim.api.nvim_buf_set_name(tree_buf, "SemTree Inspector: " .. vim.fn.fnamemodify(file, ":t"))
 
-    -- Apply syntax highlighting to the tree buffer
-    for i, _ in ipairs(display_lines) do
-        local node = node_map[i]
-        if node then
-            local line_text = display_lines[i]
-            local indent_len = node.depth * 2
-            local kind_start = indent_len
-            local kind_end = kind_start + #node.kind
+    -- Apply syntax highlighting to the tree buffer (batch in chunks to stay responsive)
+    local CHUNK = 500
+    local total = #display_lines
+    local function highlight_chunk(start_i)
+        local end_i = math.min(start_i + CHUNK - 1, total)
+        for i = start_i, end_i do
+            local node = node_map[i]
+            if node then
+                local line_text = display_lines[i]
+                local indent_len = node.depth * 2
+                local kind_start = indent_len
+                local kind_end = kind_start + #node.kind
 
-            if node.is_leaf then
-                pcall(vim.api.nvim_buf_add_highlight, tree_buf, ns, "SemTreeLeafKind", i - 1, kind_start, kind_end)
-                local text_start = line_text:find('"')
-                if text_start then
-                    pcall(vim.api.nvim_buf_add_highlight, tree_buf, ns, "SemTreeText", i - 1, text_start - 1, #line_text)
-                end
-            else
-                pcall(vim.api.nvim_buf_add_highlight, tree_buf, ns, "SemTreeNodeKind", i - 1, kind_start, kind_end)
-                local range_start = line_text:find("%[")
-                if range_start then
-                    pcall(vim.api.nvim_buf_add_highlight, tree_buf, ns, "SemTreeRange", i - 1, range_start - 1, #line_text)
+                if node.is_leaf then
+                    pcall(vim.api.nvim_buf_add_highlight, tree_buf, ns, "SemTreeLeafKind", i - 1, kind_start, kind_end)
+                    local text_start = line_text:find('"')
+                    if text_start then
+                        pcall(vim.api.nvim_buf_add_highlight, tree_buf, ns, "SemTreeText", i - 1, text_start - 1, #line_text)
+                    end
+                else
+                    pcall(vim.api.nvim_buf_add_highlight, tree_buf, ns, "SemTreeNodeKind", i - 1, kind_start, kind_end)
+                    local range_start = line_text:find("%[")
+                    if range_start then
+                        pcall(vim.api.nvim_buf_add_highlight, tree_buf, ns, "SemTreeRange", i - 1, range_start - 1, #line_text)
+                    end
                 end
             end
         end
+        if end_i < total then
+            vim.schedule(function()
+                if vim.api.nvim_buf_is_valid(tree_buf) then
+                    highlight_chunk(end_i + 1)
+                end
+            end)
+        end
     end
+    highlight_chunk(1)
 
     -- Set up cursor movement handler for interactive highlighting
     local augroup = vim.api.nvim_create_augroup("SemTreeInspector", { clear = true })
@@ -289,6 +271,81 @@ function M.open(config)
         "SemTree Inspector: navigate with ↑/↓, press ⏎ to jump, q to close",
         vim.log.levels.INFO
     )
+end
+
+--- Parse raw output lines into node table.
+local function parse_output(raw_output)
+    local raw_lines = vim.split(raw_output, "\n")
+    local nodes = {}
+    for _, line in ipairs(raw_lines) do
+        local node = parse_inspect_line(line)
+        if node then
+            if not (node.is_leaf and (node.kind == "whitespace" or node.kind == "newline")) then
+                table.insert(nodes, node)
+            end
+        end
+    end
+    return nodes
+end
+
+function M.open(config)
+    local source_buf = vim.api.nvim_get_current_buf()
+    local source_win = vim.api.nvim_get_current_win()
+    local file = vim.api.nvim_buf_get_name(source_buf)
+
+    if file == "" then
+        vim.notify("Buffer has no file", vim.log.levels.ERROR)
+        return
+    end
+
+    -- Save the file first so the CLI sees the latest content
+    if vim.bo[source_buf].modified then
+        vim.cmd("write")
+    end
+
+    -- Force --backend rd: the GLR backend can be orders of magnitude slower
+    -- on grammars with conflicts and provides no benefit for inspection.
+    local cmd = { config.binary_path, "run", file, "-f", "inspect", "--backend", "rd" }
+
+    vim.notify("SemTree: parsing…", vim.log.levels.INFO)
+
+    -- Prefer vim.system (Neovim ≥ 0.10) for true async; fall back to jobstart.
+    if vim.system then
+        vim.system(cmd, { text = true, stderr = false }, function(obj)
+            vim.schedule(function()
+                if obj.code ~= 0 then
+                    vim.notify("SemTree parse failed (exit " .. tostring(obj.code) .. ")", vim.log.levels.ERROR)
+                    return
+                end
+                local nodes = parse_output(obj.stdout or "")
+                show_inspector(source_buf, source_win, file, nodes)
+            end)
+        end)
+    else
+        -- Fallback for Neovim < 0.10
+        local stdout_chunks = {}
+        vim.fn.jobstart(cmd, {
+            stdout_buffered = true,
+            on_stdout = function(_, data)
+                if data then
+                    for _, chunk in ipairs(data) do
+                        table.insert(stdout_chunks, chunk)
+                    end
+                end
+            end,
+            on_exit = function(_, exit_code)
+                vim.schedule(function()
+                    if exit_code ~= 0 then
+                        vim.notify("SemTree parse failed (exit " .. tostring(exit_code) .. ")", vim.log.levels.ERROR)
+                        return
+                    end
+                    local raw_output = table.concat(stdout_chunks, "\n")
+                    local nodes = parse_output(raw_output)
+                    show_inspector(source_buf, source_win, file, nodes)
+                end)
+            end,
+        })
+    end
 end
 
 return M
