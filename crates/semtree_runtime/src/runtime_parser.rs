@@ -251,11 +251,41 @@ fn is_pure_dispatch(expr: &RuleExpr) -> bool {
     }
 }
 
+/// Check if a rule should collapse when it produces a single child node.
+///
+/// Targets precedence-chain links written as `Head Tail*` or `Head Suffix?`:
+/// the expression is a `Seq` whose only mandatory element is a single
+/// `RuleRef`, with every other element being `Optional`/`Repeat`. When no tail
+/// matches at runtime the wrapper node holds exactly one child and adds nothing,
+/// so it is spliced away (see `GreenNodeBuilder::finish_node_collapse_single`).
+/// Rules with field bindings or a non-`RuleRef` mandatory core are NOT
+/// collapsible — they anchor typed-AST accessors, queries, and field access.
+fn is_collapsible_shape(expr: &RuleExpr) -> bool {
+    match expr {
+        RuleExpr::Seq(parts) => {
+            let mut mandatory = parts.iter().filter(|p| {
+                !matches!(
+                    p,
+                    RuleExpr::Optional(_) | RuleExpr::Repeat(_) | RuleExpr::Blank
+                )
+            });
+            matches!(
+                (mandatory.next(), mandatory.next()),
+                (Some(RuleExpr::RuleRef(_)), None)
+            )
+        }
+        _ => false,
+    }
+}
+
 /// Per-rule data indexed by rule_idx (u16) for O(1) access.
 struct RuleData {
     name: SmolStr,
     first_set: FirstSet,
     is_transparent: bool,
+    /// Collapse this rule's node when it produced a single child node (elides
+    /// empty precedence-chain links). See `is_collapsible_shape`.
+    collapse_single_child: bool,
     syntax_kind: SyntaxKind,
 }
 
@@ -713,6 +743,19 @@ impl RuntimeParser {
             transparent_set.remove(entry);
         }
 
+        // Identify collapsible rules: single-child precedence-chain links whose
+        // wrapper node is redundant when no tail/suffix matched. Excludes rules
+        // with fields (AST/query anchors) and the entry rule.
+        let mut collapsible_set = FxHashSet::default();
+        for (name, rule) in &grammar.rules {
+            if rule.fields.is_empty() && is_collapsible_shape(&rule.expr) {
+                collapsible_set.insert(name.clone());
+            }
+        }
+        if let Some(entry) = &grammar.entry_rule {
+            collapsible_set.remove(entry);
+        }
+
         // Build indexed rule data and expression pointers.
         let num_rules = rule_indices.len();
         let mut rule_data = Vec::with_capacity(num_rules);
@@ -722,6 +765,7 @@ impl RuntimeParser {
             name: SmolStr::default(),
             first_set: FirstSet::default(),
             is_transparent: false,
+            collapse_single_child: false,
             syntax_kind: SyntaxKind::ERROR,
         });
         for (name, &idx) in &rule_indices {
@@ -732,6 +776,8 @@ impl RuntimeParser {
                 .cloned()
                 .unwrap_or_else(FirstSet::universal);
             rule_data[i].is_transparent = transparent_set.contains(name);
+            rule_data[i].collapse_single_child =
+                collapsible_set.contains(name) && !transparent_set.contains(name);
             rule_data[i].syntax_kind = rule_name_to_kind(name);
             if let Some(rule) = grammar.rules.get(name) {
                 rule_expr_ptrs[i] = &rule.expr as *const RuleExpr;
@@ -1294,6 +1340,7 @@ impl<'a> ParseContext<'a> {
         let save_builder = self.builder.checkpoint();
 
         let is_transparent = rd.is_transparent;
+        let collapse_single = rd.collapse_single_child;
 
         if !is_transparent {
             // Use pre-computed SyntaxKind — no hashing.
@@ -1307,7 +1354,11 @@ impl<'a> ParseContext<'a> {
         if !matched {
             if self.pos > save_pos {
                 if !is_transparent {
-                    self.builder.finish_node();
+                    if collapse_single {
+                        self.builder.finish_node_collapse_single();
+                    } else {
+                        self.builder.finish_node();
+                    }
                 }
             } else {
                 self.builder.rollback(save_builder);
@@ -1320,7 +1371,11 @@ impl<'a> ParseContext<'a> {
         }
 
         if !is_transparent {
-            self.builder.finish_node();
+            if collapse_single {
+                self.builder.finish_node_collapse_single();
+            } else {
+                self.builder.finish_node();
+            }
         }
         self.depth -= 1;
         self.in_progress_remove(rule_idx, pos);

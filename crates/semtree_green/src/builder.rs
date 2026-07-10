@@ -56,6 +56,35 @@ impl GreenNodeBuilder {
         }
     }
 
+    /// Like [`Self::finish_node`], but if the finished node has exactly one
+    /// child and that child is itself a node, the wrapper is elided and the
+    /// child is attached directly to the parent.
+    ///
+    /// This collapses single-child precedence-chain links (e.g. an `OrExpr`
+    /// that wraps a single `AndExpr` because no `||` was present). The result
+    /// stays 100% lossless — the surviving child spans the exact same text —
+    /// while keeping the node count close to tree-sitter's. Nodes with real
+    /// structure (an operator token + operands) have >1 child and are kept.
+    pub fn finish_node_collapse_single(&mut self) {
+        let (kind, mut children) =
+            self.stack.pop().expect("unbalanced start_node/finish_node");
+        if children.len() == 1 && matches!(children[0], NodeOrToken::Node(_)) {
+            let only = children.pop().unwrap();
+            if let Some((_, parent_children)) = self.stack.last_mut() {
+                parent_children.push(only);
+            } else {
+                self.stack.push((kind, vec![only]));
+            }
+            return;
+        }
+        let node = self.cache.node(kind, children);
+        if let Some((_, parent_children)) = self.stack.last_mut() {
+            parent_children.push(NodeOrToken::Node(node));
+        } else {
+            self.stack.push((kind, vec![NodeOrToken::Node(node)]));
+        }
+    }
+
     /// Consume the builder and return the root green node.
     pub fn finish(mut self) -> GreenNode {
         assert_eq!(self.stack.len(), 1, "unbalanced tree construction");

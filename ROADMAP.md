@@ -356,6 +356,50 @@
 
 ---
 
+## Phase 15 — Beat Tree-sitter on Performance (Parser + Incremental) 🔜
+
+> The honest Phase 12 benchmarks exposed the real gaps: SemTree builds ~8x more nodes than
+> tree-sitter, scales super-linearly on 1 MB inputs, uses 2–10x more memory, and never reuses
+> subtrees incrementally (mid-file insert = `SpliceMiss`, 0% reused). This phase closes those gaps.
+> Sequence: **B → A → D → C**, re-benchmarking after each track.
+
+### 15.B — Cut node count (node elision / single-child collapse) — no new deps, highest leverage ✅
+- [x] Collapse single-child "pass-through" nodes for precedence-chain rules (`Head Tail*` / `Head Suffix?`) — `GreenNodeBuilder::finish_node_collapse_single` elides the wrapper when only one node child remains
+- [x] Auto-detect collapsible rules: `Seq` with exactly one mandatory `RuleRef` core and only `Optional`/`Repeat` tails, no field bindings, not the entry rule (`is_collapsible_shape` in the runtime parser)
+- [x] Keep meaningful nodes as reuse anchors + query targets (binary expr with an operator has >1 child, stays a node); only anonymous wrappers/empty chain links are elided
+- [x] Verify `queries/*/highlights.scm`, typed AST, and corpus tests still pass after elision (full workspace: 200+ tests green, lossless corpus intact)
+- [ ] Add a **node-count-ratio gate** to `semtree_bench` (still todo — currently reported in the memory table but not asserted)
+
+> **Result (15.B):** node counts dropped ~30–40% (Rust 10 KB 33,310 → 20,080; JS 26,976 → 19,144;
+> Python 25,084 → 16,944; JSON/CSS unchanged — no precedence chains). Cold parse improved (Rust
+> 10 KB 2.25x → 1.97x slower; Python 1.27x → 1.14x). Still ~4–5x tree-sitter's node count and the
+> 1 MB cliff (JS 6.1x, Rust 5.1x slower) remains — those need 15.A (compact/interned trees) and the
+> allocation/backtracking work, not node elision alone.
+
+
+### 15.A — Compact, interned green/red trees
+- [ ] Evaluate adopting [`cstree`](https://github.com/domenicquirl/cstree) 0.14 (interned tokens, compact storage, pre-hashed subtrees, `Send + Sync` red trees) vs. incrementally hardening the current trees
+- [ ] If keeping our trees (A2): intern token text via `lasso` (store `u32` key, not `SmolStr`), pack children into an arena (`bumpalo`) or thin-pointer layout, pre-hash subtrees for the cache
+- [ ] Eliminate the per-node `Arc` + per-node `Vec` double allocation (`node.rs`) — the memory-bloat root cause
+- [ ] Re-benchmark memory: target within ~2x of tree-sitter node bytes (currently up to 10x)
+
+### 15.D — Real incremental subtree reuse (turns SpliceMiss → hit)
+- [ ] Replace the whole-tree rebuild in `IncrementalParser` with **path copying** via `GreenNode::replace_child` — rebuild only the ancestor spine of the edited node, Arc-clone untouched siblings (O(depth), not O(n))
+- [ ] Byte-range node reuse: nodes entirely before the edit reused as-is; nodes entirely after reused with a shifted offset; only overlapping nodes reparsed
+- [ ] Descend to the deepest old node fully containing the edit and reparse only its text
+- [ ] Gate with the `ReuseInfo` API: assert single-char insert becomes `DeepSplice` with high `reuse_ratio()` and stays lossless
+
+### 15.C — Faster lexing (the 1 MB tail)
+- [ ] Adopt [`logos`](https://github.com/maciejhirsz/logos) 0.16 (DFA lexer, ~1 GB/s) for hand-authored token sets, or generate a byte-class DFA from the DSL `token` patterns
+- [ ] Interim: `memchr` (SIMD) trivia scanning + 256-entry byte-class table in the runtime lexer
+- [ ] Ensure the green builder **interns** token text instead of copying (`RawToken` already carries a zero-copy `TextRange`)
+
+**Done when:** node counts are within ~1.5x of tree-sitter, memory within ~2x, single-char incremental inserts are splice hits, and the regenerated `BENCHMARKS.txt` shows SemTree competitive on cold parse for JS/Rust/Python (not just JSON/CSS).
+
+**Recommended crates:** `cstree` 0.14, `lasso`, `logos` 0.16, `memchr`, `bumpalo`.
+
+---
+
 ## Key Metrics vs Tree-sitter
 
 | Metric | Tree-sitter | SemTree |

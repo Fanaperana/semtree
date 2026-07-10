@@ -64,11 +64,11 @@ Ratio is SemTree median ÷ tree-sitter median (**faster** = SemTree quicker).
 
 | Language | 1 KB | 10 KB | 100 KB | 1 MB |
 |----------|------|-------|--------|------|
-| **JSON** | 2.3x faster | 2.4x faster | 2.3x faster | 2.3x faster |
-| **CSS** | 2.5x faster | 2.9x faster | 1.5x faster | 4.1x slower |
-| **Python** | 1.3x slower | 1.3x slower | 1.3x slower | 1.2x slower |
-| **JavaScript** | 1.4x slower | 1.4x slower | 1.8x slower | 6.2x slower |
-| **Rust** | 2.5x slower | 2.3x slower | 2.5x slower | 5.3x slower |
+| **JSON** | 2.4x faster | 2.4x faster | 2.4x faster | 2.3x faster |
+| **CSS** | 2.5x faster | 2.8x faster | 1.5x faster | 4.2x slower |
+| **Python** | 1.2x slower | 1.1x slower | 1.1x slower | 1.1x slower |
+| **JavaScript** | 1.3x slower | 1.3x slower | 1.7x slower | 6.1x slower |
+| **Rust** | 2.0x slower | 2.0x slower | 2.2x slower | 5.1x slower |
 
 SemTree's recursive-descent runtime is faster on simpler grammars (JSON, CSS) but slower on the
 richer ones, and scaling degrades on very large (1 MB) inputs. Faster parsing on complex grammars
@@ -110,17 +110,18 @@ number of error regions (e.g. Rust, Python).
 
 ### Memory
 
-SemTree currently uses **more** memory than tree-sitter — it builds more granular trees (roughly
-2–10x the node count). Reducing node count and bytes-per-node (arena allocation) is a ROADMAP 4.4
-item.
+SemTree currently uses **more** memory than tree-sitter — it builds more granular trees. Node
+elision (single-child precedence-chain collapse) has cut the gap substantially (JS/Rust/Python
+node counts down ~30–40%), but there's more to do (compact/interned node storage). Reducing node
+count and bytes-per-node is tracked in ROADMAP 15.A/15.B.
 
 | Language (10 KB) | Tree-sitter nodes | SemTree nodes |
 |------------------|-------------------|---------------|
 | JSON | 6,876 | 10,120 |
-| CSS | 3,597 | 10,072 |
-| Python | 4,423 | 25,084 |
-| JavaScript | 4,577 | 26,976 |
-| Rust | 4,222 | 33,310 |
+| CSS | 3,597 | 10,062 |
+| Python | 4,423 | 16,944 |
+| JavaScript | 4,577 | 19,144 |
+| Rust | 4,222 | 20,080 |
 
 ### Features Only SemTree Has
 
