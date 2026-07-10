@@ -4,6 +4,8 @@
 
 **Current status:** 21 crates, 297 tests passing, Phases 1–11 complete.
 
+**Next up (local-first):** Phase 12 (credibility & honest benchmarks), Phase 13 (language coverage & Tree-sitter import), Phase 14 (LSP-first editor integration). AI/MCP work (structural agent APIs) is deferred — it is not local-first and depends on a hardened core landing in 12–14.
+
 ---
 
 ## Phase 1 — Core Infrastructure ✅
@@ -242,6 +244,113 @@
 - [x] CLI `--backend glr` flag for explicit selection
 - [x] Unified parse result output regardless of backend
 - [ ] Performance benchmarks: GLR vs RD vs Tree-sitter (future)
+
+---
+
+## Phase 12 — Credibility & Honest Benchmarks (P1) 🔜
+
+> The "beats Tree-sitter" claim only holds if the numbers survive scrutiny. Today the
+> bench harness hand-builds toy grammars and reports headline speedups (e.g. "5,419x on
+> delete line") that read as measurement artifacts. This phase makes every published claim
+> defensible.
+
+### 12.1 — Benchmark on real grammars, not toy grammars
+- [x] Retarget `semtree_bench` to load the shipped `grammars/*.semtree` files instead of the inline hand-built JSON/JS grammars in `main.rs` (all ~770 lines of toy `build_*_grammar` builders removed; every benchmark, including the "SemTree bonus" suite, now runs on shipped grammars)
+- [~] Bench all 6 languages through the same code path used by the CLI — 5 done (JSON, Python, Rust, JS, CSS); TOML has no `tree-sitter-toml` crate on the current 0.24 API for a fair baseline (tracked as a gap; SemTree-only TOML timing can still be added)
+- [x] Parse the same corpus files with the real `tree-sitter` crate for each language (dev-dependencies already wired) so comparisons use equivalent grammars
+- [x] Report per-language results including cases where SemTree **loses** — the summary now prints per-test ratios for every language/size and an explicit "Where SemTree is SLOWER" list (no averaging away losses)
+
+> **Finding (12.1):** against the *real* shipped grammars, SemTree currently **loses** on JavaScript, Rust, and Python cold-parse at every size, and on most incremental/traversal cases; it wins on JSON (mid/large) and CSS (small/mid). This directly contradicts the README's blanket "1.5–3.7x faster" claim, which must be regenerated from a committed high-iteration run before it is trusted (see 12.4).
+
+
+### 12.2 — Honest incremental numbers
+- [x] Replace "Nx faster" framing for incremental edits with absolute latency (µs/ms) — every row now shows TS `edit+reparse` latency and SemTree `inc / full` latencies side by side
+- [x] For every incremental edit benchmark, assert the incremental tree losslessly reproduces the edited source (correctness gate `[✓]` / `[✗ LOSSY]`) before timing is trusted
+- [~] Distinguish "splice hit" from "splice miss" — approximated by printing SemTree's own full-reparse time next to the incremental time (if `inc ≥ full`, splicing did not help); an explicit hit/miss flag needs `IncrementalParser` to expose whether it spliced or fell back
+- [x] Both sides now exclude the initial parse from timing (`bench_setup` runs an un-timed setup per iteration) and use a real tree-sitter `InputEdit` computed from a prefix/suffix diff, so the comparison is apples-to-apples
+
+> **Finding (12.2):** with a fair methodology, SemTree's incremental `update()` is currently **slower than its own full reparse** on insert/append edits (e.g. JSON insert: 342µs incremental vs 285µs full) and **12–95x slower than tree-sitter's real incremental reparse**. The former README claims of "7.1x" / "5,419x faster" were artifacts of timing tree-sitter doing extra full parses while SemTree did one. The only apparent win (JSON "delete line") is degenerate — the JSON generator emits a single line, so the edit deletes the whole document. **Action:** the incremental path needs the real subtree-reuse work in 4.1 / 11.5 before any incremental speed claim is made; the benchmark generators also need multi-line JSON so "delete line" is meaningful.
+
+
+### 12.3 — Lossless conformance corpus
+- [ ] Add a conformance test: for each language, parse large real-world files pulled from popular OSS repos and assert lossless round-trip (`tree.text() == source`)
+- [ ] Wire the corpus into `cargo test` and CI so regressions in coverage or losslessness fail the build
+- [ ] Publish a coverage report per grammar: % of corpus files that parse with zero ERROR nodes
+
+### 12.4 — Reproducibility & reporting
+- [ ] `semtree bench --json` emits machine-readable results (env, versions, medians, variance)
+- [ ] Check bench inputs and a results snapshot into the repo so anyone can reproduce headline numbers
+- [ ] README benchmark table is generated from a committed results file, not hand-written
+
+**Done when:** every number in the README is reproducible by `cargo run -p semtree_bench --release`, compares against the real tree-sitter grammar for that language, and is backed by a losslessness assertion.
+
+---
+
+## Phase 13 — Language Coverage & Tree-sitter Import (P3) 🔜
+
+> We will never hand-write 200+ grammars. The winning move is to (a) make **one** flagship
+> grammar genuinely complete, and (b) turn Tree-sitter's own ecosystem into our supply chain
+> by consuming its `grammar.json` and giving those grammars formatting/linting/refactoring for free.
+
+### 13.1 — Flagship complete grammar
+- [ ] Pick one language (Python **or** Rust) and drive it to full-language coverage against a real corpus
+- [ ] Zero ERROR nodes on the flagship corpus (tracked in Phase 12.3)
+- [ ] Field extraction complete (named fields on nodes, e.g. `function.name`, `call.arguments`) so typed AST + IDE features are first-class for the flagship
+- [ ] Golden formatter + lint output snapshots for the flagship language
+
+### 13.2 — Harden the Tree-sitter importer
+- [ ] Extend `import_tree_sitter_grammar` to populate `Rule.fields` from TS `field(...)` constructs (currently dropped — `fields: Vec::new()`)
+- [ ] Map TS `prec`, `prec.left`, `prec.right`, `prec.dynamic` into SemTree precedence/associativity IR
+- [ ] Handle TS `alias`, `token`, `token.immediate`, `immediate_token` correctly
+- [ ] Support `externals`, `inline`, `supertypes`, `conflicts` (at minimum, warn + degrade gracefully instead of erroring)
+- [ ] Import a real published `grammar.json` (tree-sitter-python or tree-sitter-json) end to end and parse its corpus
+
+### 13.3 — Import validation & round-trip
+- [ ] `semtree import <grammar.json>` produces a `.semtree` DSL file (import → IR → DSL) so users can inspect/simplify
+- [ ] Round-trip test: import grammar.json, emit `.semtree`, re-parse the `.semtree`, assert equivalent IR
+- [ ] Diff report: list TS constructs that were dropped/degraded during import so gaps are visible, not silent
+
+### 13.4 — Grammar authoring quality of life
+- [ ] `semtree test` reports per-rule coverage (which grammar rules were exercised by the test corpus)
+- [ ] Grammar debugger: step through a parse showing which rule matched each span (ROADMAP 5.1 carry-over)
+- [ ] Actionable error messages for unreachable rules / empty alternatives with source spans
+
+**Done when:** one language is corpus-clean with fields, and a real upstream tree-sitter grammar can be imported and parse its own corpus with a visible gap report.
+
+---
+
+## Phase 14 — Editor Integration, LSP-First (P4) 🔜
+
+> Tree-sitter wins because it lives inside editors. Our wedge is the LSP: it already exists
+> (`semtree lsp`) and works in every editor for free, but semantic tokens are disabled and
+> features are thin. Make the LSP the primary, production-grade integration path.
+
+### 14.1 — Fix and enable semantic tokens
+- [ ] Make the runtime lexer emit distinct token kinds (keyword / operator / literal / string / number / comment) instead of a single generic `identifier` kind
+- [ ] Re-enable `semantic_tokens_provider` in `server_capabilities()` (currently disabled with a TODO in `lsp.rs`)
+- [ ] Map SemTree token classes → LSP semantic token types + modifiers (declaration, definition, readonly)
+- [ ] Snapshot tests: semantic token output for a sample file per language
+
+### 14.2 — LSP feature completeness
+- [ ] Wire `rename` (already in `semtree_refactor`) into the LSP as `textDocument/rename` + `prepareRename`
+- [ ] Add `textDocument/documentHighlight` (references of symbol under cursor)
+- [ ] Add `textDocument/selectionRange` (syntax-aware expand/shrink selection)
+- [ ] Add `textDocument/codeAction` exposing extract-variable / inline-variable from `semtree_refactor`
+- [ ] Diagnostics: surface lint results + parse ERROR nodes as LSP diagnostics with ranges
+
+### 14.3 — Robustness & lifecycle
+- [ ] Handle `workspace/didChangeConfiguration` (grammar path, format style, enabled lint rules)
+- [ ] Graceful degradation when no grammar matches a file extension (no crash, clear log)
+- [ ] Incremental sync correctness tests: apply LSP `didChange` deltas and assert tree matches full reparse
+- [ ] Cancellation + error responses conform to LSP spec (no silent request drops)
+
+### 14.4 — Distribution for editors
+- [ ] Ship a minimal VS Code extension that launches `semtree lsp` (stdio) and registers file types from installed grammars
+- [ ] Neovim: document `vim.lsp.start` config pointing at `semtree lsp` as the recommended path (alongside the existing custom plugin)
+- [ ] `semtree lsp --stdio` / `--tcp` transport flags
+- [ ] Publish CLI to crates.io + rustdoc so `cargo install semtree_cli` works (ROADMAP 10.3 carry-over)
+
+**Done when:** a fresh VS Code / Neovim user gets highlighting, symbols, go-to-def, references, rename, format, and diagnostics for a SemTree grammar via the LSP with no custom plugin required.
 
 ---
 

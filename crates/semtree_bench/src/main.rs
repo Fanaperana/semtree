@@ -1,11 +1,9 @@
-#![allow(dead_code)]
-
 mod grammar_loader;
 
 use std::time::{Duration, Instant};
 
 use semtree_format::Formatter;
-use semtree_grammar::{Grammar, Rule, RuleExpr};
+use semtree_grammar::Grammar;
 use semtree_lint::LintEngine;
 use semtree_query::{QueryEngine, QueryPattern};
 use semtree_red::{Preorder, SyntaxNode};
@@ -172,790 +170,12 @@ fn repeat_to_size(base: &str, target_size: usize) -> String {
     result
 }
 
-// ─── SemTree Grammar Builders ───────────────────────────────────────────────
-
-fn build_json_grammar() -> Grammar {
-    let mut g = Grammar::new("json");
-
-    g.add_rule(
-        "source_file",
-        Rule {
-            name: "source_file".into(),
-            expr: RuleExpr::RuleRef("value".into()),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "value",
-        Rule {
-            name: "value".into(),
-            expr: RuleExpr::Choice(vec![
-                RuleExpr::RuleRef("object".into()),
-                RuleExpr::RuleRef("array".into()),
-                RuleExpr::RuleRef("String".into()),
-                RuleExpr::RuleRef("Integer".into()),
-                RuleExpr::RuleRef("Float".into()),
-                RuleExpr::Literal("true".into()),
-                RuleExpr::Literal("false".into()),
-                RuleExpr::Literal("null".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "object",
-        Rule {
-            name: "object".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::Literal("{".into()),
-                RuleExpr::Optional(Box::new(RuleExpr::RuleRef("pair_list".into()))),
-                RuleExpr::Literal("}".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "pair_list",
-        Rule {
-            name: "pair_list".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::RuleRef("pair".into()),
-                RuleExpr::Repeat(Box::new(RuleExpr::Seq(vec![
-                    RuleExpr::Literal(",".into()),
-                    RuleExpr::RuleRef("pair".into()),
-                ]))),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "pair",
-        Rule {
-            name: "pair".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::RuleRef("String".into()),
-                RuleExpr::Literal(":".into()),
-                RuleExpr::RuleRef("value".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "array",
-        Rule {
-            name: "array".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::Literal("[".into()),
-                RuleExpr::Optional(Box::new(RuleExpr::RuleRef("value_list".into()))),
-                RuleExpr::Literal("]".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "value_list",
-        Rule {
-            name: "value_list".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::RuleRef("value".into()),
-                RuleExpr::Repeat(Box::new(RuleExpr::Seq(vec![
-                    RuleExpr::Literal(",".into()),
-                    RuleExpr::RuleRef("value".into()),
-                ]))),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g
-}
-
-fn build_javascript_grammar() -> Grammar {
-    let mut g = Grammar::new("javascript");
-
-    g.add_keyword("function");
-    g.add_keyword("const");
-    g.add_keyword("let");
-    g.add_keyword("var");
-    g.add_keyword("if");
-    g.add_keyword("else");
-    g.add_keyword("for");
-    g.add_keyword("while");
-    g.add_keyword("return");
-    g.add_keyword("class");
-    g.add_keyword("new");
-    g.add_keyword("this");
-
-    g.add_rule(
-        "source_file",
-        Rule {
-            name: "source_file".into(),
-            expr: RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("statement".into()))),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "statement",
-        Rule {
-            name: "statement".into(),
-            expr: RuleExpr::Choice(vec![
-                RuleExpr::RuleRef("function_decl".into()),
-                RuleExpr::RuleRef("class_decl".into()),
-                RuleExpr::RuleRef("variable_decl".into()),
-                RuleExpr::RuleRef("return_stmt".into()),
-                RuleExpr::RuleRef("if_stmt".into()),
-                RuleExpr::RuleRef("for_stmt".into()),
-                RuleExpr::RuleRef("expression_stmt".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "function_decl",
-        Rule {
-            name: "function_decl".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::Literal("function".into()),
-                RuleExpr::RuleRef("Identifier".into()),
-                RuleExpr::Literal("(".into()),
-                RuleExpr::Optional(Box::new(RuleExpr::RuleRef("param_list".into()))),
-                RuleExpr::Literal(")".into()),
-                RuleExpr::RuleRef("block".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "class_decl",
-        Rule {
-            name: "class_decl".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::Literal("class".into()),
-                RuleExpr::RuleRef("Identifier".into()),
-                RuleExpr::Literal("{".into()),
-                RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("method_def".into()))),
-                RuleExpr::Literal("}".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "method_def",
-        Rule {
-            name: "method_def".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::RuleRef("Identifier".into()),
-                RuleExpr::Literal("(".into()),
-                RuleExpr::Optional(Box::new(RuleExpr::RuleRef("param_list".into()))),
-                RuleExpr::Literal(")".into()),
-                RuleExpr::RuleRef("block".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "variable_decl",
-        Rule {
-            name: "variable_decl".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::Choice(vec![
-                    RuleExpr::Literal("const".into()),
-                    RuleExpr::Literal("let".into()),
-                    RuleExpr::Literal("var".into()),
-                ]),
-                RuleExpr::RuleRef("Identifier".into()),
-                RuleExpr::Optional(Box::new(RuleExpr::Seq(vec![
-                    RuleExpr::Literal("=".into()),
-                    RuleExpr::RuleRef("expression".into()),
-                ]))),
-                RuleExpr::Literal(";".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "return_stmt",
-        Rule {
-            name: "return_stmt".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::Literal("return".into()),
-                RuleExpr::Optional(Box::new(RuleExpr::RuleRef("expression".into()))),
-                RuleExpr::Literal(";".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "if_stmt",
-        Rule {
-            name: "if_stmt".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::Literal("if".into()),
-                RuleExpr::Literal("(".into()),
-                RuleExpr::RuleRef("expression".into()),
-                RuleExpr::Literal(")".into()),
-                RuleExpr::RuleRef("block_or_stmt".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "for_stmt",
-        Rule {
-            name: "for_stmt".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::Literal("for".into()),
-                RuleExpr::Literal("(".into()),
-                RuleExpr::RuleRef("expression".into()),
-                RuleExpr::Literal(";".into()),
-                RuleExpr::RuleRef("expression".into()),
-                RuleExpr::Literal(";".into()),
-                RuleExpr::RuleRef("expression".into()),
-                RuleExpr::Literal(")".into()),
-                RuleExpr::RuleRef("block".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "expression_stmt",
-        Rule {
-            name: "expression_stmt".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::RuleRef("expression".into()),
-                RuleExpr::Literal(";".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "expression",
-        Rule {
-            name: "expression".into(),
-            expr: RuleExpr::Choice(vec![
-                RuleExpr::RuleRef("String".into()),
-                RuleExpr::RuleRef("Integer".into()),
-                RuleExpr::RuleRef("Float".into()),
-                RuleExpr::RuleRef("Identifier".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "block_or_stmt",
-        Rule {
-            name: "block_or_stmt".into(),
-            expr: RuleExpr::Choice(vec![
-                RuleExpr::RuleRef("block".into()),
-                RuleExpr::RuleRef("statement".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "block",
-        Rule {
-            name: "block".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::Literal("{".into()),
-                RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("statement".into()))),
-                RuleExpr::Literal("}".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "param_list",
-        Rule {
-            name: "param_list".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::RuleRef("Identifier".into()),
-                RuleExpr::Repeat(Box::new(RuleExpr::Seq(vec![
-                    RuleExpr::Literal(",".into()),
-                    RuleExpr::RuleRef("Identifier".into()),
-                ]))),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g
-}
-
-fn build_rust_grammar() -> Grammar {
-    let mut g = Grammar::new("rust");
-
-    g.add_keyword("fn");
-    g.add_keyword("let");
-    g.add_keyword("mut");
-    g.add_keyword("struct");
-    g.add_keyword("impl");
-    g.add_keyword("pub");
-    g.add_keyword("self");
-    g.add_keyword("if");
-    g.add_keyword("for");
-    g.add_keyword("return");
-
-    g.add_rule(
-        "source_file",
-        Rule {
-            name: "source_file".into(),
-            expr: RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("item".into()))),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "item",
-        Rule {
-            name: "item".into(),
-            expr: RuleExpr::Choice(vec![
-                RuleExpr::RuleRef("function".into()),
-                RuleExpr::RuleRef("struct_def".into()),
-                RuleExpr::RuleRef("impl_block".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "function",
-        Rule {
-            name: "function".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::Optional(Box::new(RuleExpr::Literal("pub".into()))),
-                RuleExpr::Literal("fn".into()),
-                RuleExpr::RuleRef("Identifier".into()),
-                RuleExpr::Literal("(".into()),
-                RuleExpr::Optional(Box::new(RuleExpr::RuleRef("param_list".into()))),
-                RuleExpr::Literal(")".into()),
-                RuleExpr::Optional(Box::new(RuleExpr::Seq(vec![
-                    RuleExpr::Literal("->".into()),
-                    RuleExpr::RuleRef("Identifier".into()),
-                ]))),
-                RuleExpr::RuleRef("block".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "struct_def",
-        Rule {
-            name: "struct_def".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::Optional(Box::new(RuleExpr::Literal("pub".into()))),
-                RuleExpr::Literal("struct".into()),
-                RuleExpr::RuleRef("Identifier".into()),
-                RuleExpr::Literal("{".into()),
-                RuleExpr::Optional(Box::new(RuleExpr::RuleRef("field_list".into()))),
-                RuleExpr::Literal("}".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "impl_block",
-        Rule {
-            name: "impl_block".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::Literal("impl".into()),
-                RuleExpr::RuleRef("Identifier".into()),
-                RuleExpr::Literal("{".into()),
-                RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("function".into()))),
-                RuleExpr::Literal("}".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "block",
-        Rule {
-            name: "block".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::Literal("{".into()),
-                RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("statement".into()))),
-                RuleExpr::Literal("}".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "statement",
-        Rule {
-            name: "statement".into(),
-            expr: RuleExpr::Choice(vec![
-                RuleExpr::RuleRef("let_stmt".into()),
-                RuleExpr::RuleRef("return_stmt".into()),
-                RuleExpr::RuleRef("expr_stmt".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "let_stmt",
-        Rule {
-            name: "let_stmt".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::Literal("let".into()),
-                RuleExpr::Optional(Box::new(RuleExpr::Literal("mut".into()))),
-                RuleExpr::RuleRef("Identifier".into()),
-                RuleExpr::Optional(Box::new(RuleExpr::Seq(vec![
-                    RuleExpr::Literal("=".into()),
-                    RuleExpr::RuleRef("expression".into()),
-                ]))),
-                RuleExpr::Literal(";".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "return_stmt",
-        Rule {
-            name: "return_stmt".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::Literal("return".into()),
-                RuleExpr::Optional(Box::new(RuleExpr::RuleRef("expression".into()))),
-                RuleExpr::Literal(";".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "expr_stmt",
-        Rule {
-            name: "expr_stmt".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::RuleRef("expression".into()),
-                RuleExpr::Literal(";".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "expression",
-        Rule {
-            name: "expression".into(),
-            expr: RuleExpr::Choice(vec![
-                RuleExpr::RuleRef("String".into()),
-                RuleExpr::RuleRef("Integer".into()),
-                RuleExpr::RuleRef("Float".into()),
-                RuleExpr::RuleRef("Identifier".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "param_list",
-        Rule {
-            name: "param_list".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::RuleRef("param".into()),
-                RuleExpr::Repeat(Box::new(RuleExpr::Seq(vec![
-                    RuleExpr::Literal(",".into()),
-                    RuleExpr::RuleRef("param".into()),
-                ]))),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "param",
-        Rule {
-            name: "param".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::RuleRef("Identifier".into()),
-                RuleExpr::Literal(":".into()),
-                RuleExpr::RuleRef("Identifier".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "field_list",
-        Rule {
-            name: "field_list".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::RuleRef("field".into()),
-                RuleExpr::Repeat(Box::new(RuleExpr::Seq(vec![
-                    RuleExpr::Literal(",".into()),
-                    RuleExpr::RuleRef("field".into()),
-                ]))),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "field",
-        Rule {
-            name: "field".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::Optional(Box::new(RuleExpr::Literal("pub".into()))),
-                RuleExpr::RuleRef("Identifier".into()),
-                RuleExpr::Literal(":".into()),
-                RuleExpr::RuleRef("Identifier".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g
-}
-
-fn build_css_grammar() -> Grammar {
-    let mut g = Grammar::new("css");
-
-    g.add_rule(
-        "source_file",
-        Rule {
-            name: "source_file".into(),
-            expr: RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("rule_set".into()))),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "rule_set",
-        Rule {
-            name: "rule_set".into(),
-            expr: RuleExpr::Choice(vec![
-                RuleExpr::RuleRef("at_rule".into()),
-                RuleExpr::RuleRef("style_rule".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "style_rule",
-        Rule {
-            name: "style_rule".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::RuleRef("selector".into()),
-                RuleExpr::Literal("{".into()),
-                RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("declaration".into()))),
-                RuleExpr::Literal("}".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "at_rule",
-        Rule {
-            name: "at_rule".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::RuleRef("Identifier".into()),
-                RuleExpr::Literal("(".into()),
-                RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("Identifier".into()))),
-                RuleExpr::Literal(")".into()),
-                RuleExpr::Literal("{".into()),
-                RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("style_rule".into()))),
-                RuleExpr::Literal("}".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "selector",
-        Rule {
-            name: "selector".into(),
-            expr: RuleExpr::RuleRef("Identifier".into()),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "declaration",
-        Rule {
-            name: "declaration".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::RuleRef("Identifier".into()),
-                RuleExpr::Literal(":".into()),
-                RuleExpr::RuleRef("Identifier".into()),
-                RuleExpr::Literal(";".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g
-}
-
-fn build_python_grammar() -> Grammar {
-    let mut g = Grammar::new("python");
-
-    g.add_keyword("def");
-    g.add_keyword("class");
-    g.add_keyword("if");
-    g.add_keyword("for");
-    g.add_keyword("return");
-    g.add_keyword("self");
-
-    g.add_rule(
-        "source_file",
-        Rule {
-            name: "source_file".into(),
-            expr: RuleExpr::Repeat(Box::new(RuleExpr::RuleRef("statement".into()))),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "statement",
-        Rule {
-            name: "statement".into(),
-            expr: RuleExpr::Choice(vec![
-                RuleExpr::RuleRef("function_def".into()),
-                RuleExpr::RuleRef("class_def".into()),
-                RuleExpr::RuleRef("assignment".into()),
-                RuleExpr::RuleRef("return_stmt".into()),
-                RuleExpr::RuleRef("expr_stmt".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "function_def",
-        Rule {
-            name: "function_def".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::Literal("def".into()),
-                RuleExpr::RuleRef("Identifier".into()),
-                RuleExpr::Literal("(".into()),
-                RuleExpr::Optional(Box::new(RuleExpr::RuleRef("param_list".into()))),
-                RuleExpr::Literal(")".into()),
-                RuleExpr::Literal(":".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "class_def",
-        Rule {
-            name: "class_def".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::Literal("class".into()),
-                RuleExpr::RuleRef("Identifier".into()),
-                RuleExpr::Optional(Box::new(RuleExpr::Seq(vec![
-                    RuleExpr::Literal("(".into()),
-                    RuleExpr::Optional(Box::new(RuleExpr::RuleRef("param_list".into()))),
-                    RuleExpr::Literal(")".into()),
-                ]))),
-                RuleExpr::Literal(":".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "assignment",
-        Rule {
-            name: "assignment".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::RuleRef("Identifier".into()),
-                RuleExpr::Literal("=".into()),
-                RuleExpr::RuleRef("expression".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "return_stmt",
-        Rule {
-            name: "return_stmt".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::Literal("return".into()),
-                RuleExpr::Optional(Box::new(RuleExpr::RuleRef("expression".into()))),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "expr_stmt",
-        Rule {
-            name: "expr_stmt".into(),
-            expr: RuleExpr::RuleRef("expression".into()),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "expression",
-        Rule {
-            name: "expression".into(),
-            expr: RuleExpr::Choice(vec![
-                RuleExpr::RuleRef("String".into()),
-                RuleExpr::RuleRef("Integer".into()),
-                RuleExpr::RuleRef("Float".into()),
-                RuleExpr::RuleRef("Identifier".into()),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g.add_rule(
-        "param_list",
-        Rule {
-            name: "param_list".into(),
-            expr: RuleExpr::Seq(vec![
-                RuleExpr::RuleRef("Identifier".into()),
-                RuleExpr::Repeat(Box::new(RuleExpr::Seq(vec![
-                    RuleExpr::Literal(",".into()),
-                    RuleExpr::RuleRef("Identifier".into()),
-                ]))),
-            ]),
-            fields: vec![],
-        },
-    );
-
-    g
-}
-
 // ─── Benchmark Harness ──────────────────────────────────────────────────────
 
 #[derive(Clone)]
 struct BenchResult {
-    min: Duration,
-    max: Duration,
     avg: Duration,
     median: Duration,
-    iterations: usize,
 }
 
 impl BenchResult {
@@ -984,22 +204,178 @@ fn bench<F: FnMut()>(iterations: usize, mut f: F) -> BenchResult {
 
     times.sort();
 
-    let min = times[0];
-    let max = times[times.len() - 1];
     let total: Duration = times.iter().sum();
     let avg = total / iterations as u32;
     let median = times[times.len() / 2];
 
+    BenchResult { avg, median }
+}
+
+/// Like `bench`, but a fresh, UN-timed `setup()` runs before each timed call.
+/// Essential for incremental benchmarks: the initial full parse (setup) must
+/// not be counted, so we measure only the reparse-with-prior-state step.
+fn bench_setup<T>(
+    iterations: usize,
+    mut setup: impl FnMut() -> T,
+    mut timed: impl FnMut(T),
+) -> BenchResult {
+    for _ in 0..3.min(iterations) {
+        timed(setup());
+    }
+
+    let mut times = Vec::with_capacity(iterations);
+    for _ in 0..iterations {
+        let state = setup();
+        let start = Instant::now();
+        timed(state);
+        times.push(start.elapsed());
+    }
+
+    times.sort();
+    let total: Duration = times.iter().sum();
     BenchResult {
-        min,
-        max,
-        avg,
-        median,
-        iterations,
+        avg: total / iterations as u32,
+        median: times[times.len() / 2],
     }
 }
 
-// ─── Tree-sitter Helpers ────────────────────────────────────────────────────
+/// Byte offset -> tree-sitter (row, column). Column is a byte offset within the
+/// line, matching how the shipped test data (ASCII) is laid out.
+fn byte_to_point(s: &str, byte: usize) -> tree_sitter::Point {
+    let mut row = 0usize;
+    let mut col = 0usize;
+    for (i, ch) in s.char_indices() {
+        if i >= byte {
+            break;
+        }
+        if ch == '\n' {
+            row += 1;
+            col = 0;
+        } else {
+            col += ch.len_utf8();
+        }
+    }
+    tree_sitter::Point { row, column: col }
+}
+
+/// Diff two strings into a single replaced byte range: returns
+/// `(start, old_end, new_end)` where `old[start..old_end]` was replaced by
+/// `new[start..new_end]`. Computed from the common prefix/suffix.
+fn diff_edit(old: &str, new: &str) -> (usize, usize, usize) {
+    let ob = old.as_bytes();
+    let nb = new.as_bytes();
+    let mut start = 0;
+    while start < ob.len() && start < nb.len() && ob[start] == nb[start] {
+        start += 1;
+    }
+    let mut old_end = ob.len();
+    let mut new_end = nb.len();
+    while old_end > start && new_end > start && ob[old_end - 1] == nb[new_end - 1] {
+        old_end -= 1;
+        new_end -= 1;
+    }
+    (start, old_end, new_end)
+}
+
+fn ts_language_for(name: &str) -> tree_sitter::Language {
+    match name {
+        "JSON" => tree_sitter_json::LANGUAGE.into(),
+        "JavaScript" => tree_sitter_javascript::LANGUAGE.into(),
+        "Rust" => tree_sitter_rust::LANGUAGE.into(),
+        "CSS" => tree_sitter_css::LANGUAGE.into(),
+        "Python" => tree_sitter_python::LANGUAGE.into(),
+        _ => unreachable!("no tree-sitter parser for {name}"),
+    }
+}
+
+/// Fair incremental comparison for one edit.
+///
+/// Both parsers do their initial full parse in UN-timed setup, then the timed
+/// closure measures only the incremental reparse:
+///   - Tree-sitter: `tree.edit(InputEdit)` + `parse(edited, Some(&old_tree))`
+///   - SemTree:     `IncrementalParser::update(edited, edits)`
+///
+/// Also reports SemTree's own full-reparse time (so the reader can see whether
+/// incremental actually saves work) and a losslessness gate: the incremental
+/// tree must reproduce the edited source byte-for-byte.
+fn bench_incremental_case(
+    lang: &LangBench,
+    edit_name: &str,
+    source: &str,
+    edited: &str,
+    iterations: usize,
+) -> TableRow {
+    let (start, old_end, new_end) = diff_edit(source, edited);
+
+    // ── Tree-sitter: time only edit + reparse-with-prior-tree ──
+    let ts_lang = ts_language_for(lang.name);
+    let mut ts_parser = tree_sitter::Parser::new();
+    ts_parser.set_language(&ts_lang).unwrap();
+    let ts_old = ts_parser.parse(source, None).unwrap();
+    let ts_edit = tree_sitter::InputEdit {
+        start_byte: start,
+        old_end_byte: old_end,
+        new_end_byte: new_end,
+        start_position: byte_to_point(source, start),
+        old_end_position: byte_to_point(source, old_end),
+        new_end_position: byte_to_point(edited, new_end),
+    };
+    let ts_result = bench_setup(
+        iterations,
+        || {
+            let mut t = ts_old.clone();
+            t.edit(&ts_edit);
+            t
+        },
+        |t| {
+            let _ = ts_parser.parse(edited, Some(&t)).unwrap();
+        },
+    );
+
+    // ── SemTree: time only the incremental update ──
+    let grammar = lang.grammar.clone();
+    let edits = vec![semtree_runtime::EditRegion::new(
+        start as u32,
+        old_end as u32,
+        edited[start..new_end].to_string(),
+    )];
+    let st_result = bench_setup(
+        iterations,
+        || {
+            let mut inc = IncrementalParser::new(grammar.clone());
+            inc.parse(source);
+            inc
+        },
+        |mut inc| {
+            let _ = inc.update(edited, &edits);
+        },
+    );
+
+    // ── SemTree full reparse (reference: does incremental save work?) ──
+    let full_parser = RuntimeParser::new(grammar.clone());
+    let st_full = bench(iterations, || {
+        let _ = full_parser.parse(edited);
+    });
+
+    // ── Losslessness gate: incremental tree must reproduce the edited source ──
+    let mut check = IncrementalParser::new(grammar.clone());
+    check.parse(source);
+    let inc_text = check.update(edited, &edits).syntax().text();
+    let ok = if inc_text == edited { "✓" } else { "✗ LOSSY" };
+
+    TableRow {
+        test_name: format!("{} {edit_name}", lang.name),
+        ts_result: format!("{} (edit+reparse)", format_duration(ts_result.median)),
+        st_result: format!(
+            "{} inc / {} full [{ok}]",
+            format_duration(st_result.median),
+            format_duration(st_full.median)
+        ),
+        ratio: ratio_string(&st_result, &ts_result),
+    }
+}
+
+// ─── Tree-sitter Helpers ──────────────────────────────────────────────────
 
 fn ts_parse_json(source: &str) -> tree_sitter::Tree {
     let mut parser = tree_sitter::Parser::new();
@@ -1185,15 +561,6 @@ fn print_single_table(title: &str, rows: &[(String, String)]) {
     println!("╚{}╧{}╝", "═".repeat(col1_w + 1), "═".repeat(col2_w + 2));
 }
 
-fn ratio_f64(st: &BenchResult, ts: &BenchResult) -> f64 {
-    let st_ns = st.median.as_nanos() as f64;
-    let ts_ns = ts.median.as_nanos() as f64;
-    if ts_ns == 0.0 {
-        return 1.0;
-    }
-    st_ns / ts_ns
-}
-
 fn ratio_string(st: &BenchResult, ts: &BenchResult) -> String {
     let st_ns = st.median.as_nanos() as f64;
     let ts_ns = ts.median.as_nanos() as f64;
@@ -1262,70 +629,15 @@ fn run_incremental_benchmarks(langs: &[LangBench], iterations: usize) -> Vec<Tab
 
     for lang in langs {
         let source = (lang.generate)(10_240); // 10KB for incremental tests
-        let insert_pos = source.len() / 2;
-
-        // Tree-sitter incremental: edit + reparse with old tree
-        let ts_parse = lang.ts_parse;
-        let ts_result = bench(iterations, || {
-            let mut tree = ts_parse(&source);
-            let edit = tree_sitter::InputEdit {
-                start_byte: insert_pos,
-                old_end_byte: insert_pos,
-                new_end_byte: insert_pos + 1,
-                start_position: tree_sitter::Point {
-                    row: 0,
-                    column: insert_pos,
-                },
-                old_end_position: tree_sitter::Point {
-                    row: 0,
-                    column: insert_pos,
-                },
-                new_end_position: tree_sitter::Point {
-                    row: 0,
-                    column: insert_pos + 1,
-                },
-            };
-            tree.edit(&edit);
-
-            let mut edited = source.clone();
-            edited.insert(insert_pos, ' ');
-
-            let mut parser = tree_sitter::Parser::new();
-            let lang_ref: tree_sitter::Language = match lang.name {
-                "JSON" => tree_sitter_json::LANGUAGE.into(),
-                "JavaScript" => tree_sitter_javascript::LANGUAGE.into(),
-                "Rust" => tree_sitter_rust::LANGUAGE.into(),
-                "CSS" => tree_sitter_css::LANGUAGE.into(),
-                "Python" => tree_sitter_python::LANGUAGE.into(),
-                _ => unreachable!(),
-            };
-            parser.set_language(&lang_ref).unwrap();
-            let _ = parser.parse(&edited, Some(&tree)).unwrap();
-        });
-
-        // SemTree incremental reparse (splice-based subtree reuse)
-        let grammar = lang.grammar.clone();
-        let st_result = bench(iterations, || {
-            let mut edited = source.clone();
-            edited.insert(insert_pos, ' ');
-            let mut inc = IncrementalParser::new(grammar.clone());
-            let _ = inc.parse(&source);
-            let _ = inc.update(
-                &edited,
-                &[semtree_runtime::EditRegion::new(
-                    insert_pos as u32,
-                    insert_pos as u32,
-                    " ",
-                )],
-            );
-        });
-
-        rows.push(TableRow {
-            test_name: format!("{} 10KB incr", lang.name),
-            ts_result: format!("{} (edit+reparse)", format_duration(ts_result.median)),
-            st_result: format!("{} (incremental)", format_duration(st_result.median)),
-            ratio: ratio_string(&st_result, &ts_result),
-        });
+        let mut edited = source.clone();
+        edited.insert(source.len() / 2, ' ');
+        rows.push(bench_incremental_case(
+            lang,
+            "insert char",
+            &source,
+            &edited,
+            iterations,
+        ));
     }
 
     rows
@@ -1373,52 +685,12 @@ fn run_traversal_benchmarks(langs: &[LangBench], iterations: usize) -> Vec<Table
     rows
 }
 
-fn run_memory_benchmarks(langs: &[LangBench]) -> Vec<TableRow> {
-    let mut rows = Vec::new();
-
-    for lang in langs {
-        let source = (lang.generate)(10_240);
-
-        let ts_tree = (lang.ts_parse)(&source);
-        let ts_nodes = ts_count_nodes(&ts_tree);
-
-        let parser = RuntimeParser::new(lang.grammar.clone());
-        let st_parse = parser.parse(&source);
-        let st_root = st_parse.syntax();
-        let st_nodes = st_count_nodes(&st_root);
-
-        // Approximate: tree-sitter nodes are ~48 bytes each (internal struct)
-        let ts_estimated_bytes = ts_nodes * 48;
-        // SemTree green nodes: ~64 bytes each (SmolStr + children vec + kind + len)
-        let st_estimated_bytes = st_nodes * 64;
-
-        rows.push(TableRow {
-            test_name: format!("{} memory", lang.name),
-            ts_result: format!("{} nodes (~{}KB)", ts_nodes, ts_estimated_bytes / 1024),
-            st_result: format!("{} nodes (~{}KB)", st_nodes, st_estimated_bytes / 1024),
-            ratio: if st_estimated_bytes > ts_estimated_bytes {
-                format!(
-                    "{:.1}x more",
-                    st_estimated_bytes as f64 / ts_estimated_bytes as f64
-                )
-            } else {
-                format!(
-                    "{:.1}x less",
-                    ts_estimated_bytes as f64 / st_estimated_bytes as f64
-                )
-            },
-        });
-    }
-
-    rows
-}
-
 fn run_semtree_extras(_langs: &[LangBench]) -> Vec<(String, String)> {
     let mut results = Vec::new();
 
-    // Use the Rust grammar for semantic analysis demos
+    // Use the shipped Rust grammar for semantic analysis demos
     let rust_source = generate_rust(10_240);
-    let rust_grammar = build_rust_grammar();
+    let rust_grammar = grammar_loader::load_shipped_grammar("rust");
     let parser = RuntimeParser::new(rust_grammar);
     let parse_result = parser.parse(&rust_source);
     let root = parse_result.syntax();
@@ -1846,31 +1118,22 @@ fn run_incremental_detail_benchmarks(langs: &[LangBench], iterations: usize) -> 
 
         for &(edit_name, edit_fn) in edit_types {
             let edited = edit_fn(&source);
-
-            // Tree-sitter: parse original, edit, reparse with old tree
-            let ts_parse_fn = lang.ts_parse;
-            let ts_result = bench(iterations, || {
-                let old_tree = ts_parse_fn(&source);
-                let _ = ts_parse_fn(&edited);
-                let _ = old_tree; // ensure old tree lives long enough
-            });
-
-            // SemTree: full reparse
-            let parser = RuntimeParser::new(lang.grammar.clone());
-            let st_result = bench(iterations, || {
-                let _ = parser.parse(&edited);
-            });
-
-            rows.push(TableRow {
-                test_name: format!("{} {}", lang.name, edit_name),
-                ts_result: format_duration(ts_result.median),
-                st_result: format_duration(st_result.median),
-                ratio: ratio_string(&st_result, &ts_result),
-            });
+            rows.push(bench_incremental_case(
+                lang, edit_name, &source, &edited, iterations,
+            ));
         }
     }
 
     rows
+}
+
+/// Collect the tests in `rows` where SemTree was slower than Tree-sitter.
+/// Used to report honest losses instead of hiding them behind averages.
+fn collect_losses(category: &str, rows: &[TableRow]) -> Vec<(String, String)> {
+    rows.iter()
+        .filter(|r| r.ratio.contains("slower"))
+        .map(|r| (format!("{category}: {}", r.test_name), r.ratio.clone()))
+        .collect()
 }
 
 // ─── Main ───────────────────────────────────────────────────────────────────
@@ -1975,11 +1238,41 @@ fn main() {
     println!("SUMMARY (computed from this run — shipped grammars/*.semtree)");
     println!("═══════════════════════════════════════════════════════════════");
     print_computed_summary(&cold_rows, &incr_rows, &mem_rows);
+
+    // Per-language cold-parse ratios across every size — no hiding behind averages.
+    println!();
+    println!("  Per-test cold-parse ratios (all languages, all sizes):");
+    for r in &cold_rows {
+        let mark = if r.ratio.contains("slower") { "✗" } else { "✓" };
+        println!("    {mark} {:<22} {}", r.test_name, r.ratio);
+    }
+
+    // Explicit list of every comparison SemTree loses. Credibility over cherry-picking.
+    let mut losses = Vec::new();
+    losses.extend(collect_losses("Parse", &cold_rows));
+    losses.extend(collect_losses("Incremental", &incr_rows));
+    losses.extend(collect_losses("Incremental(detail)", &incr_detail));
+    losses.extend(collect_losses("ErrorRecovery", &err_speed));
+    losses.extend(collect_losses("Traversal", &trav_rows));
+
+    println!();
+    println!("  Where SemTree is SLOWER than Tree-sitter (honest losses):");
+    if losses.is_empty() {
+        println!("    (none in this run)");
+    } else {
+        for (name, ratio) in &losses {
+            println!("    ✗ {name}  ({ratio})");
+        }
+    }
+
     println!();
     println!("Notes:");
     println!("  - SemTree uses grammars from grammars/*.semtree (not inline toy grammars)");
     println!("  - Tree-sitter uses production C parsers");
-    println!("  - Incremental: TS edit+reparse vs SemTree IncrementalParser::update");
+    println!("  - Incremental: initial parse is EXCLUDED from timing; both sides measure");
+    println!("    only the reparse-with-prior-state step (TS tree.edit()+parse(Some(old)),");
+    println!("    SemTree IncrementalParser::update). [✓] = incremental tree reproduces the");
+    println!("    edited source losslessly; 'full' = SemTree full reparse, shown for reference");
     println!("  - All times are median of {iterations} iterations, --release build");
     println!("  - Memory estimates use 48 bytes/node (TS) and 64 bytes/node (SemTree)");
 }
