@@ -264,7 +264,7 @@ UseItem :=
     "use" UseTree ";"
 
 UseTree :=
-    UsePath | UseGlob | UseGroup | UseRename
+    UseGlob | UseGroup | UseRename | UsePath
 
 UsePath :=
     Path
