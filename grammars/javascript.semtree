@@ -39,6 +39,7 @@ keyword in
 keyword of
 keyword delete
 keyword void
+keyword static
 
 # ── Top-Level ────────────────────────────────────────────────
 
@@ -123,7 +124,10 @@ ForStmt :=
     "for" "(" ForInit? ";" condition: Expression? ";" update: Expression? ")" body: Statement
 
 ForInit :=
-    VarDecl | Expression
+    ForVarDecl | Expression
+
+ForVarDecl :=
+    VarKind binding: VarBinding VarBindingTail*
 
 ForOfStmt :=
     "for" "(" VarKind Identifier "of" Expression ")" body: Statement
@@ -176,7 +180,10 @@ ClassBody :=
     "{" ClassMember* "}"
 
 ClassMember :=
-    MethodDef | PropertyDef
+    StaticMember | MethodDef | PropertyDef
+
+StaticMember :=
+    "static" MethodDef
 
 MethodDef :=
     AsyncModifier? name: Identifier ParamList Block
@@ -298,7 +305,7 @@ UnaryExpr :=
     | PostfixExpr
 
 UnaryOp :=
-    "!" | "-" | "+" | "typeof" | "void" | "delete"
+    "!" | "-" | "+" | "typeof" | "void" | "delete" | "++" | "--"
 
 AwaitExpr :=
     "await" UnaryExpr
@@ -307,7 +314,10 @@ PostfixExpr :=
     PrimaryExpr PostfixOp*
 
 PostfixOp :=
-    CallArgs | MemberAccess | ComputedAccess | OptionalChain
+    IncrementOp | CallArgs | MemberAccess | ComputedAccess | OptionalChain
+
+IncrementOp :=
+    "++" | "--"
 
 CallArgs :=
     "(" ArgumentList? ")"

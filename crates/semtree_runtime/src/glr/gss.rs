@@ -105,16 +105,39 @@ impl Gss {
     /// Collect all paths of length `depth` from `node`, returning sequences of
     /// (GssNodeId, SppfNodeId) pairs along each path. Used during reduction.
     pub fn paths(&self, node: GssNodeId, depth: usize) -> Vec<Vec<(GssNodeId, SppfNodeId)>> {
-        if depth == 0 {
+        const MAX_PATHS: usize = 16;
+        self.paths_inner(node, depth, MAX_PATHS)
+    }
+
+    fn paths_inner(
+        &self,
+        node: GssNodeId,
+        depth: usize,
+        budget: usize,
+    ) -> Vec<Vec<(GssNodeId, SppfNodeId)>> {
+        if depth == 0 || budget == 0 {
             return vec![vec![(node, SppfNodeId(u32::MAX))]];
         }
         let mut result = Vec::new();
-        let links = self.nodes[node.0 as usize].links.clone();
-        for link in &links {
-            let sub_paths = self.paths(link.predecessor, depth - 1);
+        let links = &self.nodes[node.0 as usize].links;
+        // Limit fan-out per node to avoid exponential paths.
+        let max_links = links.len().min(8);
+        for link in &links[..max_links] {
+            if result.len() >= budget {
+                break;
+            }
+            // Prevent cycles: skip self-links.
+            if link.predecessor == node {
+                continue;
+            }
+            let remaining = budget - result.len();
+            let sub_paths = self.paths_inner(link.predecessor, depth - 1, remaining);
             for mut path in sub_paths {
                 path.push((node, link.sppf_node));
                 result.push(path);
+                if result.len() >= budget {
+                    break;
+                }
             }
         }
         result

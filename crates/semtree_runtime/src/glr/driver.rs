@@ -88,7 +88,34 @@ impl GlrParser {
 
         let mut token_idx = 0;
 
+        // Cap active GSS nodes to prevent exponential blowup on
+        // highly ambiguous grammars.  When the cap is hit we prune
+        // to the lowest-state (closest to start) nodes.
+        const MAX_ACTIVE: usize = 64;
+
+        // Total reduction budget across the entire parse.  If exhausted
+        // we fall through to tree building with whatever we have.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+
         loop {
+            if active.len() > MAX_ACTIVE {
+                active.sort_by_key(|n| gss.state_of(*n));
+                active.truncate(MAX_ACTIVE);
+            }
+
+            // Bail out if parsing takes too long (ambiguity explosion).
+            if std::time::Instant::now() >= deadline {
+                errors.push(RuntimeParseError {
+                    message: "GLR parse timed out (grammar too ambiguous); consider using --backend rd".to_string(),
+                    range: if token_idx < tokens.len() {
+                        tokens[token_idx].range
+                    } else {
+                        TextRange::new(TextSize::new(0), TextSize::new(0))
+                    },
+                });
+                break;
+            }
+
             if active.is_empty() {
                 // All stacks died — try error recovery.
                 if token_idx < tokens.len() && tokens[token_idx].kind != RuntimeTokenKind::Eof {
@@ -137,7 +164,7 @@ impl GlrParser {
 
                 // Do any pending reductions before accepting.
                 let reduce_result =
-                    self.perform_reductions(&active, &Symbol::Eof, &mut gss, &mut sppf);
+                    self.perform_reductions(&active, &Symbol::Eof, &mut gss, &mut sppf, deadline);
                 active = reduce_result.new_active;
                 ambiguity_count += reduce_result.ambiguities;
 
@@ -156,7 +183,7 @@ impl GlrParser {
             let terminal = self.token_to_symbol(tok);
 
             // Phase 1: Perform all reductions.
-            let reduce_result = self.perform_reductions(&active, &terminal, &mut gss, &mut sppf);
+            let reduce_result = self.perform_reductions(&active, &terminal, &mut gss, &mut sppf, deadline);
             active = reduce_result.new_active;
             ambiguity_count += reduce_result.ambiguities;
 
@@ -277,18 +304,26 @@ impl GlrParser {
         lookahead: &Symbol,
         gss: &mut Gss,
         sppf: &mut Sppf,
+        deadline: std::time::Instant,
     ) -> ReduceResult {
         let mut current = active.to_vec();
         let mut ambiguities = 0;
         let mut changed = true;
         let mut iterations = 0u32;
 
-        while changed && iterations < 10_000 {
+        while changed && iterations < 200 {
+            if std::time::Instant::now() >= deadline {
+                break;
+            }
             changed = false;
             iterations += 1;
             let snapshot: Vec<GssNodeId> = current.clone();
 
             for &gss_node in &snapshot {
+                if std::time::Instant::now() >= deadline {
+                    changed = false;
+                    break;
+                }
                 let state = gss.state_of(gss_node);
 
                 let actions = match self.table.action.get(state) {

@@ -25,14 +25,14 @@ impl ParserBackend {
     }
 }
 
-/// Choose RD when the grammar has no GLR conflicts, GLR otherwise.
-pub fn select_backend(grammar: &Grammar) -> ParserBackend {
-    let glr = GlrParser::new(grammar.clone());
-    if glr.has_conflicts() {
-        ParserBackend::Glr
-    } else {
-        ParserBackend::RecursiveDescent
-    }
+/// Choose the parser backend.
+///
+/// RD is the default — it is fast, produces good error recovery, and
+/// handles all grammars.  GLR must be requested explicitly via
+/// `--backend glr`; it is useful for truly ambiguous grammars but can
+/// exhibit exponential blowup on large, conflict-heavy grammars.
+pub fn select_backend(_grammar: &Grammar) -> ParserBackend {
+    ParserBackend::RecursiveDescent
 }
 
 /// Unified parse result regardless of backend.

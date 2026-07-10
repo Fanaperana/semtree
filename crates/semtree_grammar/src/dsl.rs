@@ -90,9 +90,16 @@ impl<'a> DslParser<'a> {
 
         let mut fields = Vec::new();
 
+        // Check for inline body on the same line as :=
+        let inline_body = parts.get(1).map(|s| s.trim()).unwrap_or("");
+
         // Collect all indented body lines into a single string, joining continuation
         // lines (those starting with `|`) with the previous line.
-        let mut body_text = String::new();
+        let mut body_text = if inline_body.is_empty() {
+            String::new()
+        } else {
+            inline_body.to_string()
+        };
         while self.pos < self.lines.len() {
             let body_line = self.lines[self.pos];
             if body_line.is_empty() {
@@ -152,14 +159,37 @@ impl<'a> DslParser<'a> {
             // field: Rule pattern
             if i + 2 < tokens.len() && tokens[i + 1] == ":" {
                 let field_name: SmolStr = tok.as_str().into();
-                let rule_ref: SmolStr = tokens[i + 2].as_str().into();
+                let rule_token = tokens[i + 2].as_str();
+                // Handle modifiers on the field's rule reference (e.g. Expression?, Statement*, Item+)
+                let inner_expr = if rule_token.ends_with('?') && rule_token.len() > 1 {
+                    let inner = &rule_token[..rule_token.len() - 1];
+                    RuleExpr::Optional(Box::new(RuleExpr::RuleRef(inner.into())))
+                } else if rule_token.ends_with('*') && rule_token.len() > 1 {
+                    let inner = &rule_token[..rule_token.len() - 1];
+                    RuleExpr::Repeat(Box::new(RuleExpr::RuleRef(inner.into())))
+                } else if rule_token.ends_with('+') && rule_token.len() > 1 {
+                    let inner = &rule_token[..rule_token.len() - 1];
+                    RuleExpr::Repeat1(Box::new(RuleExpr::RuleRef(inner.into())))
+                } else {
+                    RuleExpr::RuleRef(rule_token.into())
+                };
                 fields.push(FieldDef {
                     name: field_name.clone(),
-                    rule: rule_ref.clone(),
+                    rule: match &inner_expr {
+                        RuleExpr::Optional(b) | RuleExpr::Repeat(b) | RuleExpr::Repeat1(b) => {
+                            if let RuleExpr::RuleRef(r) = b.as_ref() {
+                                r.clone()
+                            } else {
+                                rule_token.into()
+                            }
+                        }
+                        RuleExpr::RuleRef(r) => r.clone(),
+                        _ => rule_token.into(),
+                    },
                 });
                 exprs.push(RuleExpr::Field(
                     field_name,
-                    Box::new(RuleExpr::RuleRef(rule_ref)),
+                    Box::new(inner_expr),
                 ));
                 i += 3;
                 continue;
