@@ -118,20 +118,41 @@ function M.lint_buffer()
     local cmd = string.format("%s lint %s 2>&1", M.config.binary_path, vim.fn.shellescape(file))
     local output = vim.fn.system(cmd)
     local diagnostics = {}
+    local buf = vim.api.nvim_get_current_buf()
+    local panel = require("semtree.panel")
     for _, line in ipairs(vim.split(output, "\n")) do
-        local row, msg = line:match("line (%d+): (.+)")
-        if row and msg then
+        -- CLI format: "severity [rule] message (start_byte..end_byte)"
+        local severity_str, rule, msg, s, e = line:match("^(%S+)%s+%[(.-)%]%s+(.-)%s+%((%d+)%.%.(%d+)%)$")
+        if severity_str and msg then
+            local sev = vim.diagnostic.severity.WARN
+            if severity_str == "error" then
+                sev = vim.diagnostic.severity.ERROR
+            elseif severity_str == "info" or severity_str == "hint" then
+                sev = vim.diagnostic.severity.INFO
+            end
+            local start_byte = tonumber(s)
+            local end_byte = tonumber(e)
+            local lnum, col = panel.byte_to_pos(buf, start_byte)
+            local end_lnum, end_col = panel.byte_to_pos(buf, end_byte)
             table.insert(diagnostics, {
-                lnum = tonumber(row) - 1,
-                col = 0,
-                severity = vim.diagnostic.severity.WARN,
+                lnum = lnum,
+                col = col,
+                end_lnum = end_lnum,
+                end_col = end_col,
+                severity = sev,
                 message = msg,
                 source = "semtree",
+                code = rule,
             })
         end
     end
     local ns = vim.api.nvim_create_namespace("semtree")
     vim.diagnostic.set(ns, 0, diagnostics)
+    if #diagnostics == 0 then
+        vim.notify("SemTree: no lint issues found", vim.log.levels.INFO)
+    else
+        vim.notify(string.format("SemTree: %d issue(s) found", #diagnostics), vim.log.levels.WARN)
+    end
 end
 
 function M.format_buffer()
