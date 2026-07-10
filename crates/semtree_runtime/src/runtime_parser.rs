@@ -228,6 +228,126 @@ fn first_of_expr(
     }
 }
 
+/// Get a stable identity for a RuleExpr based on its pointer address.
+#[inline]
+fn expr_id(expr: &RuleExpr) -> ExprId {
+    ExprId(expr as *const RuleExpr as usize)
+}
+
+/// Recursively walk all expressions in a rule, computing and caching FIRST sets.
+fn precompute_expr_first(
+    expr: &RuleExpr,
+    grammar: &Grammar,
+    first_sets: &FxHashMap<SmolStr, FirstSet>,
+    cache: &mut FxHashMap<ExprId, FirstSet>,
+) {
+    let eid = expr_id(expr);
+    if cache.contains_key(&eid) {
+        return;
+    }
+    let fs = first_of_expr_static(expr, first_sets);
+    cache.insert(eid, fs);
+
+    // Recurse into children.
+    match expr {
+        RuleExpr::Seq(parts) | RuleExpr::Choice(parts) => {
+            for part in parts {
+                precompute_expr_first(part, grammar, first_sets, cache);
+            }
+        }
+        RuleExpr::Repeat(inner)
+        | RuleExpr::Repeat1(inner)
+        | RuleExpr::Optional(inner)
+        | RuleExpr::Field(_, inner)
+        | RuleExpr::Token(inner)
+        | RuleExpr::Prec(_, inner)
+        | RuleExpr::PrecLeft(_, inner)
+        | RuleExpr::PrecRight(_, inner) => {
+            precompute_expr_first(inner, grammar, first_sets, cache);
+        }
+        RuleExpr::Literal(_) | RuleExpr::RuleRef(_) | RuleExpr::Blank => {}
+    }
+}
+
+/// Compute the FIRST set for an expression using only the precomputed per-rule sets.
+fn first_of_expr_static(expr: &RuleExpr, first_sets: &FxHashMap<SmolStr, FirstSet>) -> FirstSet {
+    match expr {
+        RuleExpr::Literal(s) => {
+            let mut fs = FirstSet::default();
+            fs.literals.insert(s.clone());
+            fs
+        }
+        RuleExpr::RuleRef(name) => {
+            if let Some(fs) = first_sets.get(name) {
+                fs.clone()
+            } else {
+                match name.as_str() {
+                    "Identifier" | "identifier" | "_identifier" => {
+                        let mut fs = FirstSet::default();
+                        fs.can_match_ident = true;
+                        fs
+                    }
+                    "Integer" | "integer" | "number" => {
+                        let mut fs = FirstSet::default();
+                        fs.can_match_int = true;
+                        fs
+                    }
+                    "Float" | "float" => {
+                        let mut fs = FirstSet::default();
+                        fs.can_match_float = true;
+                        fs
+                    }
+                    "String" | "string" => {
+                        let mut fs = FirstSet::default();
+                        fs.can_match_string = true;
+                        fs
+                    }
+                    _ => FirstSet::universal(),
+                }
+            }
+        }
+        RuleExpr::Seq(parts) if !parts.is_empty() => {
+            let mut fs = FirstSet::default();
+            for part in parts {
+                let pf = first_of_expr_static(part, first_sets);
+                let can_be_empty = pf.can_be_empty;
+                fs.merge(&pf);
+                fs.can_be_empty = false;
+                if !can_be_empty {
+                    return fs;
+                }
+            }
+            fs.can_be_empty = true;
+            fs
+        }
+        RuleExpr::Choice(alts) => {
+            let mut fs = FirstSet::default();
+            for alt in alts {
+                fs.merge(&first_of_expr_static(alt, first_sets));
+            }
+            fs
+        }
+        RuleExpr::Repeat(inner) => {
+            let mut fs = first_of_expr_static(inner, first_sets);
+            fs.can_be_empty = true;
+            fs
+        }
+        RuleExpr::Repeat1(inner) => first_of_expr_static(inner, first_sets),
+        RuleExpr::Optional(inner) => {
+            let mut fs = first_of_expr_static(inner, first_sets);
+            fs.can_be_empty = true;
+            fs
+        }
+        RuleExpr::Field(_, inner) | RuleExpr::Token(inner) => {
+            first_of_expr_static(inner, first_sets)
+        }
+        RuleExpr::Prec(_, inner)
+        | RuleExpr::PrecLeft(_, inner)
+        | RuleExpr::PrecRight(_, inner) => first_of_expr_static(inner, first_sets),
+        _ => FirstSet::universal(),
+    }
+}
+
 /// Result of a grammar-driven parse.
 pub struct RuntimeParseResult {
     pub green_tree: GreenNode,
@@ -277,22 +397,55 @@ pub struct RuntimeParser {
     lexer: RuntimeLexer,
     /// Precomputed FIRST sets for predictive parsing.
     first_sets: FxHashMap<SmolStr, FirstSet>,
+    /// Rule name → compact u16 index for fast set operations.
+    rule_indices: FxHashMap<SmolStr, u16>,
+    /// Precomputed FIRST sets keyed by expression identity (pointer-based).
+    /// Built once in `new()` by walking every expression in the grammar.
+    expr_first_cache: FxHashMap<ExprId, FirstSet>,
 }
+
+/// Identity key for a RuleExpr based on its address in the Grammar IR.
+/// Safe because the Grammar (and therefore its RuleExpr nodes) lives as long
+/// as the RuntimeParser that owns it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+struct ExprId(usize);
 
 impl RuntimeParser {
     pub fn new(grammar: Grammar) -> Self {
         let lexer = RuntimeLexer::new(&grammar);
         let first_sets = compute_first_sets(&grammar);
+
+        // Build rule name → u16 index mapping.
+        let mut rule_indices = FxHashMap::default();
+        for (i, name) in grammar.rules.keys().enumerate() {
+            rule_indices.insert(name.clone(), i as u16);
+        }
+
+        // Precompute FIRST sets for every expression node in the grammar.
+        let mut expr_first_cache = FxHashMap::default();
+        for rule in grammar.rules.values() {
+            precompute_expr_first(&rule.expr, &grammar, &first_sets, &mut expr_first_cache);
+        }
+
         Self {
             grammar,
             lexer,
             first_sets,
+            rule_indices,
+            expr_first_cache,
         }
     }
 
     pub fn parse(&self, source: &str) -> RuntimeParseResult {
         let tokens = self.lexer.tokenize(source);
-        let mut ctx = ParseContext::new(&self.grammar, &tokens, source, &self.first_sets);
+        let mut ctx = ParseContext::new(
+            &self.grammar,
+            &tokens,
+            source,
+            &self.first_sets,
+            &self.rule_indices,
+            &self.expr_first_cache,
+        );
 
         let entry_rule = self
             .grammar
@@ -429,15 +582,23 @@ struct ParseContext<'a> {
     pos: usize,
     builder: GreenNodeBuilder,
     errors: Vec<RuntimeParseError>,
-    /// Track (rule_name, token_position) to prevent left-recursion only at the same position.
-    in_progress: FxHashSet<(SmolStr, usize)>,
+    /// Track (rule_index, token_position) to prevent left-recursion only at the same position.
+    in_progress: FxHashSet<(u16, u32)>,
     /// Nesting depth guard to prevent stack overflow on deep recursion.
     depth: u32,
     /// Precomputed FIRST sets for predictive lookahead.
     first_sets: &'a FxHashMap<SmolStr, FirstSet>,
-    /// Negative parse cache: (rule_name, token_position) → known to fail.
+    /// Negative parse cache: (rule_index, token_position) → known to fail.
     /// Avoids re-attempting rules that already failed at a given position.
-    fail_cache: FxHashSet<(SmolStr, usize)>,
+    fail_cache: FxHashSet<(u16, u32)>,
+    /// Rule name → compact u16 index.
+    rule_indices: &'a FxHashMap<SmolStr, u16>,
+    /// Precomputed FIRST sets per expression (by pointer identity).
+    expr_first_cache: &'a FxHashMap<ExprId, FirstSet>,
+    /// Cached skip_trivia result: (from_pos, to_pos).
+    /// Avoids re-scanning trivia from the same position.
+    trivia_cache_from: usize,
+    trivia_cache_to: usize,
 }
 
 const MAX_DEPTH: u32 = 512;
@@ -448,6 +609,8 @@ impl<'a> ParseContext<'a> {
         tokens: &'a [RawToken],
         source: &'a str,
         first_sets: &'a FxHashMap<SmolStr, FirstSet>,
+        rule_indices: &'a FxHashMap<SmolStr, u16>,
+        expr_first_cache: &'a FxHashMap<ExprId, FirstSet>,
     ) -> Self {
         Self {
             grammar,
@@ -460,6 +623,10 @@ impl<'a> ParseContext<'a> {
             depth: 0,
             first_sets,
             fail_cache: FxHashSet::default(),
+            rule_indices,
+            expr_first_cache,
+            trivia_cache_from: usize::MAX,
+            trivia_cache_to: 0,
         }
     }
 
@@ -476,15 +643,22 @@ impl<'a> ParseContext<'a> {
         }
     }
 
-    fn skip_trivia_pos(&self) -> usize {
-        let mut i = self.pos;
+    #[inline]
+    fn skip_trivia_pos(&mut self) -> usize {
+        let from = self.pos;
+        if from == self.trivia_cache_from {
+            return self.trivia_cache_to;
+        }
+        let mut i = from;
         while i < self.tokens.len() && self.tokens[i].kind.is_trivia() {
             i += 1;
         }
+        self.trivia_cache_from = from;
+        self.trivia_cache_to = i;
         i
     }
 
-    fn peek_text(&self) -> &str {
+    fn peek_text(&mut self) -> &str {
         let i = self.skip_trivia_pos();
         if i < self.tokens.len() {
             self.tokens[i].text.as_str()
@@ -494,7 +668,7 @@ impl<'a> ParseContext<'a> {
     }
 
     #[allow(dead_code)]
-    fn peek_kind(&self) -> RuntimeTokenKind {
+    fn peek_kind(&mut self) -> RuntimeTokenKind {
         let i = self.skip_trivia_pos();
         if i < self.tokens.len() {
             self.tokens[i].kind
@@ -569,7 +743,18 @@ impl<'a> ParseContext<'a> {
         let mut count = 0;
         let mut brace_depth: i32 = 0;
         while !self.at_eof() && count < 50 {
-            let text = self.peek_text();
+            // Inline trivia skip + text access to avoid borrow conflicts.
+            let mut ti = self.pos;
+            while ti < self.tokens.len() && self.tokens[ti].kind.is_trivia() {
+                ti += 1;
+            }
+            let text_owned;
+            let text: &str = if ti < self.tokens.len() {
+                text_owned = self.tokens[ti].text.clone();
+                text_owned.as_str()
+            } else {
+                ""
+            };
 
             // Track brace/bracket nesting so we don't stop inside blocks.
             if text == "{" || text == "(" || text == "[" {
@@ -596,18 +781,19 @@ impl<'a> ParseContext<'a> {
         // After skipping tokens, invalidate fail-cache entries at positions
         // we've moved past.  Keep entries for positions ahead of us — they're
         // still valid.
-        let new_pos = self.pos;
+        let new_pos = self.pos as u32;
         self.fail_cache.retain(|(_rule, pos)| *pos >= new_pos);
     }
 
     /// Check if a token text is a recovery point (statement/item start).
-    fn is_recovery_token(&self, text: &str) -> bool {
+    fn is_recovery_token(&mut self, text: &str) -> bool {
         // Check hardcoded recovery tokens first.
         if RECOVERY_TOKENS.contains(&text) {
             return true;
         }
         // Also recover at any grammar keyword that typically starts statements.
-        if let Some(kw_text) = self.tokens.get(self.skip_trivia_pos()) {
+        let trivia_pos = self.skip_trivia_pos();
+        if let Some(kw_text) = self.tokens.get(trivia_pos) {
             matches!(kw_text.kind, RuntimeTokenKind::Keyword(_))
         } else {
             false
@@ -693,16 +879,15 @@ impl<'a> ParseContext<'a> {
             }
         }
 
-        let rule = match self.grammar.rules.get(name) {
-            Some(r) => r.clone(),
+        let rule_idx = match self.rule_indices.get(name) {
+            Some(&idx) => idx,
             None => {
                 self.error_here(&format!("undefined rule: {name}"));
                 return false;
             }
         };
 
-        let name_smol: SmolStr = name.into();
-        let guard_key = (name_smol.clone(), self.pos);
+        let guard_key = (rule_idx, self.pos as u32);
 
         // Negative memoization: if we already failed this rule at this position, skip.
         if self.fail_cache.contains(&guard_key) {
@@ -713,7 +898,7 @@ impl<'a> ParseContext<'a> {
             return false;
         }
 
-        self.in_progress.insert(guard_key.clone());
+        self.in_progress.insert(guard_key);
         self.depth += 1;
 
         let save_pos = self.pos;
@@ -722,7 +907,11 @@ impl<'a> ParseContext<'a> {
         let node_kind = self.rule_name_to_kind(name);
         self.builder.start_node(node_kind);
 
-        let matched = self.parse_expr(&rule.expr);
+        // Access the rule expression via a copied reference to avoid borrow conflicts.
+        // `self.grammar` is `&'a Grammar` (Copy), so copying it doesn't borrow self.
+        let grammar = self.grammar;
+        let expr = &grammar.rules.get(name).unwrap().expr;
+        let matched = self.parse_expr(expr);
 
         if !matched {
             // If we consumed tokens but still failed, keep what we have as a
@@ -736,7 +925,7 @@ impl<'a> ParseContext<'a> {
                 self.builder.rollback(save_builder);
                 self.pos = save_pos;
                 // Cache the failure so we don't retry this rule at this position.
-                self.fail_cache.insert(guard_key.clone());
+                self.fail_cache.insert(guard_key);
             }
             self.depth -= 1;
             self.in_progress.remove(&guard_key);
@@ -932,10 +1121,13 @@ impl<'a> ParseContext<'a> {
             // Predictive lookahead: skip alternatives whose FIRST set
             // doesn't include the current token.
             if have_lookahead {
-                let fs = self.first_of_expr_cached(expr);
-                if !fs.is_universal && !fs.can_be_empty && !fs.matches_token(&self.tokens[peek_pos])
-                {
-                    continue;
+                let eid = expr_id(expr);
+                let fs = self.expr_first_cache.get(&eid);
+                if let Some(fs) = fs {
+                    if !fs.is_universal && !fs.can_be_empty && !fs.matches_token(&self.tokens[peek_pos])
+                    {
+                        continue;
+                    }
                 }
             }
 
@@ -951,73 +1143,6 @@ impl<'a> ParseContext<'a> {
         self.errors.truncate(save_errors);
         self.builder.rollback(save_builder);
         false
-    }
-
-    /// Get the FIRST set for an expression, using precomputed sets for RuleRefs.
-    fn first_of_expr_cached(&self, expr: &RuleExpr) -> FirstSet {
-        match expr {
-            RuleExpr::Literal(s) => {
-                let mut fs = FirstSet::default();
-                fs.literals.insert(s.clone());
-                fs
-            }
-            RuleExpr::RuleRef(name) => {
-                if let Some(fs) = self.first_sets.get(name) {
-                    fs.clone()
-                } else {
-                    // Builtins and unknowns.
-                    match name.as_str() {
-                        "Identifier" | "identifier" | "_identifier" => {
-                            let mut fs = FirstSet::default();
-                            fs.can_match_ident = true;
-                            fs
-                        }
-                        "Integer" | "integer" | "number" => {
-                            let mut fs = FirstSet::default();
-                            fs.can_match_int = true;
-                            fs
-                        }
-                        "Float" | "float" => {
-                            let mut fs = FirstSet::default();
-                            fs.can_match_float = true;
-                            fs
-                        }
-                        "String" | "string" => {
-                            let mut fs = FirstSet::default();
-                            fs.can_match_string = true;
-                            fs
-                        }
-                        _ => FirstSet::universal(),
-                    }
-                }
-            }
-            RuleExpr::Seq(parts) if !parts.is_empty() => self.first_of_expr_cached(&parts[0]),
-            RuleExpr::Choice(alts) => {
-                let mut fs = FirstSet::default();
-                for alt in alts {
-                    fs.merge(&self.first_of_expr_cached(alt));
-                }
-                fs
-            }
-            RuleExpr::Repeat(inner) => {
-                let mut fs = self.first_of_expr_cached(inner);
-                fs.can_be_empty = true;
-                fs
-            }
-            RuleExpr::Repeat1(inner) => self.first_of_expr_cached(inner),
-            RuleExpr::Optional(inner) => {
-                let mut fs = self.first_of_expr_cached(inner);
-                fs.can_be_empty = true;
-                fs
-            }
-            RuleExpr::Field(_, inner) | RuleExpr::Token(inner) => {
-                self.first_of_expr_cached(inner)
-            }
-            RuleExpr::Prec(_, inner)
-            | RuleExpr::PrecLeft(_, inner)
-            | RuleExpr::PrecRight(_, inner) => self.first_of_expr_cached(inner),
-            _ => FirstSet::universal(),
-        }
     }
 
     fn parse_repeat(&mut self, inner: &RuleExpr) -> bool {

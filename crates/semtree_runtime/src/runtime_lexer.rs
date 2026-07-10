@@ -4,6 +4,70 @@ use semtree_grammar::Grammar;
 use smol_str::SmolStr;
 use text_size::{TextRange, TextSize};
 
+/// A byte-trie for fast longest-prefix matching of literal tokens.
+#[derive(Debug)]
+struct LiteralTrie {
+    children: Box<[Option<Box<LiteralTrie>>; 128]>,
+    /// If Some, a literal ends here with the given literal index.
+    terminal: Option<(SmolStr, u16)>,
+}
+
+impl Default for LiteralTrie {
+    fn default() -> Self {
+        Self {
+            children: Box::new(std::array::from_fn(|_| None)),
+            terminal: None,
+        }
+    }
+}
+
+impl LiteralTrie {
+    fn insert(&mut self, lit: &SmolStr, idx: u16) {
+        let bytes = lit.as_bytes();
+        let mut node = self;
+        for &b in bytes {
+            if b >= 128 {
+                return; // Non-ASCII literals fall back to linear scan
+            }
+            let slot = &mut node.children[b as usize];
+            node = slot.get_or_insert_with(|| Box::new(LiteralTrie::default()));
+        }
+        // Only store the longest literal at each terminal (trie already handles prefix ordering)
+        if node.terminal.is_none() || lit.len() > node.terminal.as_ref().unwrap().0.len() {
+            node.terminal = Some((lit.clone(), idx));
+        }
+    }
+
+    /// Find the longest matching literal at the given position.
+    #[inline]
+    fn longest_match(&self, bytes: &[u8], pos: usize) -> Option<(SmolStr, u16, usize)> {
+        let mut node = self;
+        let mut best: Option<(SmolStr, u16, usize)> = None;
+        let mut i = pos;
+        while i < bytes.len() {
+            let b = bytes[i];
+            if b >= 128 {
+                break;
+            }
+            match &node.children[b as usize] {
+                Some(child) => {
+                    node = child;
+                    i += 1;
+                    if let Some((ref lit, idx)) = node.terminal {
+                        best = Some((lit.clone(), idx, i));
+                    }
+                }
+                None => break,
+            }
+        }
+        best
+    }
+
+    fn is_empty(&self) -> bool {
+        self.terminal.is_none() && self.children.iter().all(|c| c.is_none())
+    }
+}
+
 /// A token produced by the runtime lexer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawToken {
@@ -60,6 +124,8 @@ struct CompiledExtra {
 pub struct RuntimeLexer {
     keywords: FxHashMap<SmolStr, u16>,
     literals: Vec<(SmolStr, u16)>,
+    /// Trie for O(max_len) literal matching instead of O(N * max_len) linear scan.
+    literal_trie: LiteralTrie,
     custom_tokens: Vec<CompiledToken>,
     token_names: Vec<SmolStr>,
     extra_patterns: Vec<CompiledExtra>,
@@ -81,6 +147,12 @@ impl RuntimeLexer {
 
         let mut literals: Vec<_> = literal_set.into_iter().collect();
         literals.sort_by_key(|a| std::cmp::Reverse(a.0.len()));
+
+        // Build trie for fast literal matching.
+        let mut literal_trie = LiteralTrie::default();
+        for (lit, idx) in &literals {
+            literal_trie.insert(lit, *idx);
+        }
 
         let mut custom_tokens = Vec::new();
         let mut token_names = Vec::new();
@@ -129,6 +201,7 @@ impl RuntimeLexer {
         Self {
             keywords,
             literals,
+            literal_trie,
             custom_tokens,
             token_names,
             extra_patterns,
@@ -477,23 +550,36 @@ impl RuntimeLexer {
                 continue;
             }
 
-            // Grammar literals
-            let remaining = &source[pos..];
-            let mut matched = false;
-            for (lit, idx) in &self.literals {
-                if remaining.starts_with(lit.as_str()) {
-                    pos += lit.len();
+            // Grammar literals — use trie for O(max_len) lookup.
+            if !self.literal_trie.is_empty() {
+                if let Some((lit, idx, end_pos)) = self.literal_trie.longest_match(bytes, pos) {
+                    pos = end_pos;
                     tokens.push(RawToken {
-                        kind: RuntimeTokenKind::Literal(*idx),
-                        text: lit.clone(),
+                        kind: RuntimeTokenKind::Literal(idx),
+                        text: lit,
                         range: Self::make_range(start, pos),
                     });
-                    matched = true;
-                    break;
+                    continue;
                 }
-            }
-            if matched {
-                continue;
+            } else {
+                // Fallback for non-ASCII literals.
+                let remaining = &source[pos..];
+                let mut matched = false;
+                for (lit, idx) in &self.literals {
+                    if remaining.starts_with(lit.as_str()) {
+                        pos += lit.len();
+                        tokens.push(RawToken {
+                            kind: RuntimeTokenKind::Literal(*idx),
+                            text: lit.clone(),
+                            range: Self::make_range(start, pos),
+                        });
+                        matched = true;
+                        break;
+                    }
+                }
+                if matched {
+                    continue;
+                }
             }
 
             pos += c.len_utf8();

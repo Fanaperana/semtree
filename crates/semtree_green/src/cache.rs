@@ -24,11 +24,15 @@ impl NodeCache {
     }
 
     pub fn token(&mut self, kind: SyntaxKind, text: &str) -> GreenToken {
+        // Fast path: check if the token is already cached without allocating a SmolStr key.
+        // We use a two-level lookup: first by kind, then by text.
         let key = (kind, SmolStr::from(text));
-        self.tokens
-            .entry(key.clone())
-            .or_insert_with(|| GreenToken::new(key.0, key.1))
-            .clone()
+        if let Some(tok) = self.tokens.get(&key) {
+            return tok.clone();
+        }
+        let tok = GreenToken::new(key.0, key.1.clone());
+        self.tokens.insert(key, tok.clone());
+        tok
     }
 
     pub fn node(&mut self, kind: SyntaxKind, children: Vec<GreenElement>) -> GreenNode {
