@@ -71,7 +71,10 @@ function M.setup(opts)
 end
 
 function M.parse_buffer(args)
-    local file = vim.api.nvim_buf_get_name(0)
+    local panel = require("semtree.panel")
+    local source_buf = vim.api.nvim_get_current_buf()
+    local source_win = vim.api.nvim_get_current_win()
+    local file = vim.api.nvim_buf_get_name(source_buf)
     if file == "" then
         vim.notify("Buffer has no file", vim.log.levels.ERROR)
         return
@@ -79,15 +82,13 @@ function M.parse_buffer(args)
     local format = (args and args.args ~= "") and args.args or "sexp-pretty"
     local cmd = string.format("%s run %s -f %s", M.config.binary_path, vim.fn.shellescape(file), format)
     local output = vim.fn.system(cmd)
+    local lines = vim.split(output, "\n")
+    local range_map = panel.parse_ranges(lines)
 
-    vim.cmd("vnew")
-    local buf = vim.api.nvim_get_current_buf()
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, vim.split(output, "\n"))
-    vim.bo[buf].buftype = "nofile"
-    vim.bo[buf].bufhidden = "wipe"
-    vim.bo[buf].swapfile = false
-    vim.bo[buf].filetype = "semtree-tree"
-    vim.api.nvim_buf_set_name(buf, "SemTree: " .. vim.fn.fnamemodify(file, ":t"))
+    panel.open_panel(source_buf, source_win, lines, range_map, {
+        filetype = "semtree-tree",
+        title = "SemTree: " .. vim.fn.fnamemodify(file, ":t"),
+    })
 end
 
 function M.show_tree()
@@ -95,14 +96,20 @@ function M.show_tree()
 end
 
 function M.show_symbols()
-    local file = vim.api.nvim_buf_get_name(0)
+    local panel = require("semtree.panel")
+    local source_buf = vim.api.nvim_get_current_buf()
+    local source_win = vim.api.nvim_get_current_win()
+    local file = vim.api.nvim_buf_get_name(source_buf)
     if file == "" then return end
     local cmd = string.format("%s symbols %s", M.config.binary_path, vim.fn.shellescape(file))
     local output = vim.fn.system(cmd)
-    vim.cmd("vnew")
-    vim.api.nvim_buf_set_lines(0, 0, -1, false, vim.split(output, "\n"))
-    vim.bo.buftype = "nofile"
-    vim.bo.filetype = "semtree-symbols"
+    local lines = vim.split(output, "\n")
+    local range_map = panel.parse_ranges(lines)
+
+    panel.open_panel(source_buf, source_win, lines, range_map, {
+        filetype = "semtree-symbols",
+        title = "SemTree Symbols: " .. vim.fn.fnamemodify(file, ":t"),
+    })
 end
 
 function M.lint_buffer()
