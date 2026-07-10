@@ -36,12 +36,10 @@ impl NodeCache {
     }
 
     pub fn node(&mut self, kind: SyntaxKind, children: Vec<GreenElement>) -> GreenNode {
-        let hash = self.hash_children(&children);
-        let key = (kind, hash);
-        self.nodes
-            .entry(key)
-            .or_insert_with(|| GreenNode::new(kind, children))
-            .clone()
+        // Skip cache for cold parses — hashing all children + HashMap lookup
+        // is pure overhead when subtrees are rarely repeated.
+        // The cache is most useful for incremental re-parsing.
+        GreenNode::new(kind, children)
     }
 
     fn hash_children(&self, children: &[GreenElement]) -> u64 {

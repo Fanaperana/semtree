@@ -38,22 +38,24 @@ StringLit :=
 fn runtime_lexer_keywords() {
     let grammar = simple_grammar();
     let lexer = RuntimeLexer::new(&grammar);
-    let tokens = lexer.tokenize("fn let return");
+    let source = "fn let return";
+    let tokens = lexer.tokenize(source);
 
     let non_trivia: Vec<_> = tokens.iter().filter(|t| !t.kind.is_trivia()).collect();
     assert!(matches!(non_trivia[0].kind, RuntimeTokenKind::Keyword(_)));
-    assert_eq!(non_trivia[0].text.as_str(), "fn");
+    assert_eq!(non_trivia[0].text(source), "fn");
     assert!(matches!(non_trivia[1].kind, RuntimeTokenKind::Keyword(_)));
-    assert_eq!(non_trivia[1].text.as_str(), "let");
+    assert_eq!(non_trivia[1].text(source), "let");
     assert!(matches!(non_trivia[2].kind, RuntimeTokenKind::Keyword(_)));
-    assert_eq!(non_trivia[2].text.as_str(), "return");
+    assert_eq!(non_trivia[2].text(source), "return");
 }
 
 #[test]
 fn runtime_lexer_literals_and_idents() {
     let grammar = simple_grammar();
     let lexer = RuntimeLexer::new(&grammar);
-    let tokens = lexer.tokenize("fn main() { let x = 42; }");
+    let source = "fn main() { let x = 42; }";
+    let tokens = lexer.tokenize(source);
 
     let non_trivia: Vec<_> = tokens
         .iter()
@@ -61,7 +63,7 @@ fn runtime_lexer_literals_and_idents() {
         .collect();
 
     assert_eq!(non_trivia.len(), 11);
-    assert_eq!(non_trivia[1].text.as_str(), "main");
+    assert_eq!(non_trivia[1].text(source), "main");
     assert_eq!(non_trivia[1].kind, RuntimeTokenKind::Ident);
     assert_eq!(non_trivia[8].kind, RuntimeTokenKind::Integer);
 }

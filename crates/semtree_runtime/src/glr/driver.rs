@@ -125,6 +125,7 @@ impl GlrParser {
                         &mut sppf,
                         &mut gss,
                         &self.table,
+                        source,
                     );
                     if let Some((new_active, new_idx, error)) = recovery {
                         active = new_active;
@@ -180,7 +181,7 @@ impl GlrParser {
             }
 
             // Determine the current terminal symbol for the table lookup.
-            let terminal = self.token_to_symbol(tok);
+            let terminal = self.token_to_symbol(tok, source);
 
             // Phase 1: Perform all reductions.
             let reduce_result = self.perform_reductions(&active, &terminal, &mut gss, &mut sppf, deadline);
@@ -189,13 +190,13 @@ impl GlrParser {
 
             // Phase 2: Perform shifts.
             let shift_result =
-                self.perform_shifts(&active, &terminal, tok, token_idx, &mut gss, &mut sppf);
+                self.perform_shifts(&active, &terminal, tok, token_idx, &mut gss, &mut sppf, source);
 
             if shift_result.is_empty() {
                 // No shifts possible — error.
                 if tok.kind != RuntimeTokenKind::Eof {
                     errors.push(RuntimeParseError {
-                        message: format!("unexpected token '{}'", tok.text),
+                        message: format!("unexpected token '{}'", tok.text(source)),
                         range: tok.range,
                     });
 
@@ -205,6 +206,7 @@ impl GlrParser {
                         &mut sppf,
                         &mut gss,
                         &self.table,
+                        source,
                     );
                     if let Some((new_active, new_idx, error)) = recovery {
                         active = new_active;
@@ -248,10 +250,10 @@ impl GlrParser {
         }
     }
 
-    fn token_to_symbol(&self, tok: &RawToken) -> Symbol {
+    fn token_to_symbol(&self, tok: &RawToken, source: &str) -> Symbol {
         match tok.kind {
             RuntimeTokenKind::Keyword(_) | RuntimeTokenKind::Literal(_) => {
-                Symbol::Terminal(tok.text.clone())
+                Symbol::Terminal(SmolStr::from(tok.text(source)))
             }
             RuntimeTokenKind::Ident => Symbol::IdentTerminal,
             RuntimeTokenKind::Integer => Symbol::IntTerminal,
@@ -260,8 +262,8 @@ impl GlrParser {
             RuntimeTokenKind::Eof => Symbol::Eof,
             RuntimeTokenKind::Indent => Symbol::Terminal("INDENT".into()),
             RuntimeTokenKind::Dedent => Symbol::Terminal("DEDENT".into()),
-            RuntimeTokenKind::Custom(_) => Symbol::Terminal(tok.text.clone()),
-            _ => Symbol::Terminal(tok.text.clone()),
+            RuntimeTokenKind::Custom(_) => Symbol::Terminal(SmolStr::from(tok.text(source))),
+            _ => Symbol::Terminal(SmolStr::from(tok.text(source))),
         }
     }
 
@@ -433,19 +435,20 @@ impl GlrParser {
         _tok_idx: usize,
         gss: &mut Gss,
         sppf: &mut Sppf,
+        source: &str,
     ) -> Vec<GssNodeId> {
         let mut new_active = Vec::new();
         let syntax_kind = self.token_to_syntax_kind(tok);
 
         let sppf_terminal =
-            sppf.create_terminal(terminal.clone(), tok.text.clone(), tok.range, syntax_kind);
+            sppf.create_terminal(terminal.clone(), SmolStr::from(tok.text(source)), tok.range, syntax_kind);
 
         for &gss_node in active {
             let state = gss.state_of(gss_node);
 
             if let Some(actions) = self.table.action.get(state) {
                 // Check both the specific terminal and builtin terminal types.
-                let terminals_to_check = self.matching_terminals(terminal, tok);
+                let terminals_to_check = self.matching_terminals(terminal, tok, source);
 
                 for check_terminal in &terminals_to_check {
                     if let Some(action_list) = actions.get(check_terminal) {
@@ -472,14 +475,14 @@ impl GlrParser {
 
     /// For a given token, return all Symbol variants to check in the action table.
     /// A keyword token "def" should match both Terminal("def") and IdentTerminal.
-    fn matching_terminals(&self, primary: &Symbol, tok: &RawToken) -> Vec<Symbol> {
+    fn matching_terminals(&self, primary: &Symbol, tok: &RawToken, source: &str) -> Vec<Symbol> {
         let mut result = vec![primary.clone()];
         match tok.kind {
             RuntimeTokenKind::Keyword(_) => {
                 result.push(Symbol::IdentTerminal);
             }
             RuntimeTokenKind::Ident => {
-                result.push(Symbol::Terminal(tok.text.clone()));
+                result.push(Symbol::Terminal(SmolStr::from(tok.text(source))));
             }
             _ => {}
         }
@@ -488,7 +491,7 @@ impl GlrParser {
 
     fn build_final_tree(
         &self,
-        _source: &str,
+        source: &str,
         tokens: &[RawToken],
         sppf: &Sppf,
         _gss: &Gss,
@@ -520,7 +523,7 @@ impl GlrParser {
                     RuntimeTokenKind::BlockComment => SyntaxKind::BLOCK_COMMENT,
                     _ => SyntaxKind::WHITESPACE,
                 };
-                builder.token(kind, tok.text.as_str());
+                builder.token(kind, tok.text(source));
                 tok_idx += 1;
             }
 
@@ -603,6 +606,7 @@ impl GlrParser {
         idx: &mut usize,
         end_offset: usize,
         builder: &mut semtree_green::GreenNodeBuilder,
+        source: &str,
     ) {
         while *idx < tokens.len() {
             let tok = &tokens[*idx];
@@ -617,7 +621,7 @@ impl GlrParser {
                     RuntimeTokenKind::BlockComment => SyntaxKind::BLOCK_COMMENT,
                     _ => SyntaxKind::WHITESPACE,
                 };
-                builder.token(kind, tok.text.as_str());
+                builder.token(kind, tok.text(source));
                 *idx += 1;
             } else {
                 break;
@@ -625,7 +629,7 @@ impl GlrParser {
         }
     }
 
-    fn build_trivial_tree(&self, _source: &str, tokens: &[RawToken]) -> GreenNode {
+    fn build_trivial_tree(&self, source: &str, tokens: &[RawToken]) -> GreenNode {
         let mut builder = semtree_green::GreenNodeBuilder::new();
         builder.start_node(SyntaxKind::SOURCE_FILE);
         for tok in tokens {
@@ -633,7 +637,7 @@ impl GlrParser {
                 break;
             }
             let kind = self.token_to_syntax_kind(tok);
-            builder.token(kind, tok.text.as_str());
+            builder.token(kind, tok.text(source));
         }
         builder.finish_node();
         builder.finish()

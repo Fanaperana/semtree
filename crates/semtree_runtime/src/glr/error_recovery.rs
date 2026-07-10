@@ -1,3 +1,4 @@
+use smol_str::SmolStr;
 use text_size::{TextRange, TextSize};
 
 use crate::glr::gss::{Gss, GssNodeId};
@@ -27,6 +28,7 @@ impl GlrErrorRecovery {
         sppf: &mut Sppf,
         gss: &mut Gss,
         table: &ParseTable,
+        source: &str,
     ) -> Option<(Vec<GssNodeId>, usize, RuntimeParseError)> {
         let start_idx = token_idx;
 
@@ -44,10 +46,10 @@ impl GlrErrorRecovery {
             }
 
             // Check if this is a recovery token.
-            let is_recovery = RECOVERY_TOKENS.contains(&tok.text.as_str());
+            let is_recovery = RECOVERY_TOKENS.contains(&tok.text(source));
 
             // Check if state 0 can handle this token.
-            let terminal = token_to_symbol(tok);
+            let terminal = token_to_symbol(tok, source);
             let can_shift = table
                 .action
                 .first()
@@ -68,7 +70,7 @@ impl GlrErrorRecovery {
                 _ => SyntaxKind::IDENT,
             };
             let sppf_node =
-                sppf.create_terminal(terminal, tok.text.clone(), tok.range, syntax_kind);
+                sppf.create_terminal(terminal, SmolStr::from(tok.text(source)), tok.range, syntax_kind);
             skipped_sppf_children.push(sppf_node);
             skip_idx += 1;
 
@@ -134,16 +136,16 @@ impl GlrErrorRecovery {
     }
 }
 
-fn token_to_symbol(tok: &RawToken) -> Symbol {
+fn token_to_symbol(tok: &RawToken, source: &str) -> Symbol {
     match tok.kind {
         RuntimeTokenKind::Keyword(_) | RuntimeTokenKind::Literal(_) => {
-            Symbol::Terminal(tok.text.clone())
+            Symbol::Terminal(SmolStr::from(tok.text(source)))
         }
         RuntimeTokenKind::Ident => Symbol::IdentTerminal,
         RuntimeTokenKind::Integer => Symbol::IntTerminal,
         RuntimeTokenKind::Float => Symbol::FloatTerminal,
         RuntimeTokenKind::StringLit => Symbol::StringTerminal,
         RuntimeTokenKind::Eof => Symbol::Eof,
-        _ => Symbol::Terminal(tok.text.clone()),
+        _ => Symbol::Terminal(SmolStr::from(tok.text(source))),
     }
 }

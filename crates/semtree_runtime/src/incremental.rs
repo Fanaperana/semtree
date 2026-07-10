@@ -326,7 +326,6 @@ impl IncrementalParser {
                 if t.kind == RuntimeTokenKind::Eof {
                     RawToken {
                         kind: RuntimeTokenKind::Eof,
-                        text: t.text.clone(),
                         range: TextRange::new(
                             TextSize::new(new_source.len() as u32),
                             TextSize::new(new_source.len() as u32),
@@ -337,7 +336,6 @@ impl IncrementalParser {
                     let new_end = (u32::from(t.range.end()) as i64 + delta).max(0) as u32;
                     RawToken {
                         kind: t.kind,
-                        text: t.text.clone(),
                         range: TextRange::new(TextSize::new(new_start), TextSize::new(new_end)),
                     }
                 }
@@ -353,7 +351,6 @@ impl IncrementalParser {
         if result.last().map(|t| t.kind) != Some(RuntimeTokenKind::Eof) {
             result.push(RawToken {
                 kind: RuntimeTokenKind::Eof,
-                text: SmolStr::default(),
                 range: TextRange::new(
                     TextSize::new(new_source.len() as u32),
                     TextSize::new(new_source.len() as u32),

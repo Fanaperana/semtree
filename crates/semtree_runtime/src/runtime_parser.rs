@@ -49,11 +49,12 @@ impl FirstSet {
     }
 
     /// Does this FIRST set predict a match for the given token?
-    fn matches_token(&self, tok: &RawToken) -> bool {
+    fn matches_token(&self, tok: &RawToken, source: &str) -> bool {
         if self.is_universal {
             return true;
         }
-        if self.literals.contains(&tok.text) {
+        let text = tok.text(source);
+        if self.literals.contains(text) {
             return true;
         }
         match tok.kind {
@@ -63,10 +64,7 @@ impl FirstSet {
             RuntimeTokenKind::StringLit => self.can_match_string,
             RuntimeTokenKind::Indent => self.literals.contains("INDENT"),
             RuntimeTokenKind::Dedent => self.literals.contains("DEDENT"),
-            _ => {
-                // Punctuation / operators — check literals.
-                false
-            }
+            _ => false,
         }
     }
 }
@@ -234,6 +232,48 @@ fn expr_id(expr: &RuleExpr) -> ExprId {
     ExprId(expr as *const RuleExpr as usize)
 }
 
+/// Check if a rule expression is a "pure dispatch" — a Choice where every
+/// alternative is a single RuleRef. Such rules are just routing and don't
+/// need their own node in the tree.
+fn is_pure_dispatch(expr: &RuleExpr) -> bool {
+    match expr {
+        RuleExpr::Choice(alts) => {
+            alts.len() >= 2 && alts.iter().all(|a| matches!(a, RuleExpr::RuleRef(_)))
+        }
+        _ => false,
+    }
+}
+
+/// Per-rule data indexed by rule_idx (u16) for O(1) access.
+struct RuleData {
+    name: SmolStr,
+    first_set: FirstSet,
+    is_transparent: bool,
+    syntax_kind: SyntaxKind,
+}
+
+/// Pre-resolved target of a `RuleExpr::RuleRef`.
+/// Eliminates per-call string matching, linear scans, and HashMap lookups.
+#[derive(Debug, Clone, Copy)]
+enum ResolvedRef {
+    /// A builtin like Identifier, Integer, Float, String, INDENT, DEDENT.
+    Builtin(BuiltinKind),
+    /// A custom token definition (index into grammar.tokens).
+    CustomToken(u16),
+    /// A grammar rule (index into rule_data / rule_expr_ptrs).
+    Rule(u16),
+}
+
+#[derive(Debug, Clone, Copy)]
+enum BuiltinKind {
+    Ident,
+    Integer,
+    Float,
+    String,
+    Indent,
+    Dedent,
+}
+
 /// Recursively walk all expressions in a rule, computing and caching FIRST sets.
 fn precompute_expr_first(
     expr: &RuleExpr,
@@ -266,6 +306,65 @@ fn precompute_expr_first(
             precompute_expr_first(inner, grammar, first_sets, cache);
         }
         RuleExpr::Literal(_) | RuleExpr::RuleRef(_) | RuleExpr::Blank => {}
+    }
+}
+
+/// Resolve a rule name to a `ResolvedRef` target.
+fn resolve_name(
+    name: &str,
+    rule_indices: &FxHashMap<SmolStr, u16>,
+    custom_token_indices: &FxHashMap<SmolStr, u16>,
+) -> ResolvedRef {
+    match name {
+        "Identifier" | "identifier" | "_identifier" => ResolvedRef::Builtin(BuiltinKind::Ident),
+        "Integer" | "integer" | "number" => ResolvedRef::Builtin(BuiltinKind::Integer),
+        "Float" | "float" => ResolvedRef::Builtin(BuiltinKind::Float),
+        "String" | "string" => ResolvedRef::Builtin(BuiltinKind::String),
+        "INDENT" | "Indent" => ResolvedRef::Builtin(BuiltinKind::Indent),
+        "DEDENT" | "Dedent" => ResolvedRef::Builtin(BuiltinKind::Dedent),
+        _ => {
+            if let Some(&idx) = custom_token_indices.get(name) {
+                ResolvedRef::CustomToken(idx)
+            } else if let Some(&idx) = rule_indices.get(name) {
+                ResolvedRef::Rule(idx)
+            } else {
+                // Will produce an error at parse time.
+                ResolvedRef::Rule(u16::MAX)
+            }
+        }
+    }
+}
+
+/// Recursively walk all expressions in a rule, resolving RuleRef targets.
+fn resolve_refs_in_expr(
+    expr: &RuleExpr,
+    rule_indices: &FxHashMap<SmolStr, u16>,
+    custom_token_indices: &FxHashMap<SmolStr, u16>,
+    cache: &mut FxHashMap<ExprId, ResolvedRef>,
+) {
+    match expr {
+        RuleExpr::RuleRef(name) => {
+            let eid = expr_id(expr);
+            if !cache.contains_key(&eid) {
+                cache.insert(eid, resolve_name(name, rule_indices, custom_token_indices));
+            }
+        }
+        RuleExpr::Seq(parts) | RuleExpr::Choice(parts) => {
+            for part in parts {
+                resolve_refs_in_expr(part, rule_indices, custom_token_indices, cache);
+            }
+        }
+        RuleExpr::Repeat(inner)
+        | RuleExpr::Repeat1(inner)
+        | RuleExpr::Optional(inner)
+        | RuleExpr::Field(_, inner)
+        | RuleExpr::Token(inner)
+        | RuleExpr::Prec(_, inner)
+        | RuleExpr::PrecLeft(_, inner)
+        | RuleExpr::PrecRight(_, inner) => {
+            resolve_refs_in_expr(inner, rule_indices, custom_token_indices, cache);
+        }
+        RuleExpr::Literal(_) | RuleExpr::Blank => {}
     }
 }
 
@@ -348,6 +447,147 @@ fn first_of_expr_static(expr: &RuleExpr, first_sets: &FxHashMap<SmolStr, FirstSe
     }
 }
 
+/// Pre-computed dispatch table for a Choice expression.
+/// Groups alternative indices by which token type they accept,
+/// enabling O(1) dispatch instead of O(N) FIRST-set scanning.
+struct ChoiceDispatch {
+    /// Literal text → list of alternative indices that accept it.
+    literal_map: FxHashMap<SmolStr, Vec<u8>>,
+    /// Alternative indices that accept Ident tokens.
+    ident_alts: Vec<u8>,
+    /// Alternative indices that accept Integer tokens.
+    int_alts: Vec<u8>,
+    /// Alternative indices that accept Float tokens.
+    float_alts: Vec<u8>,
+    /// Alternative indices that accept String tokens.
+    string_alts: Vec<u8>,
+    /// Alternative indices that are "universal" (accept anything or can be empty).
+    universal_alts: Vec<u8>,
+}
+
+impl ChoiceDispatch {
+    /// Get the list of alternative indices to try for the given token.
+    #[inline]
+    fn candidates_for(&self, tok: &RawToken, source: &str) -> (&[u8], &[u8]) {
+        let specific = match tok.kind {
+            RuntimeTokenKind::Ident | RuntimeTokenKind::Keyword(_) => {
+                // Check both ident_alts and literal_map for the specific text.
+                let text = tok.text(source);
+                if let Some(lit_alts) = self.literal_map.get(text) {
+                    return (lit_alts.as_slice(), &self.ident_alts);
+                }
+                self.ident_alts.as_slice()
+            }
+            RuntimeTokenKind::Literal(_) => {
+                let text = tok.text(source);
+                if let Some(lit_alts) = self.literal_map.get(text) {
+                    return (lit_alts.as_slice(), &[]);
+                }
+                &[]
+            }
+            RuntimeTokenKind::Integer => self.int_alts.as_slice(),
+            RuntimeTokenKind::Float => self.float_alts.as_slice(),
+            RuntimeTokenKind::StringLit => self.string_alts.as_slice(),
+            RuntimeTokenKind::Indent => {
+                if let Some(alts) = self.literal_map.get("INDENT") {
+                    return (alts.as_slice(), &[]);
+                }
+                &[]
+            }
+            RuntimeTokenKind::Dedent => {
+                if let Some(alts) = self.literal_map.get("DEDENT") {
+                    return (alts.as_slice(), &[]);
+                }
+                &[]
+            }
+            _ => &[],
+        };
+        (specific, &[])
+    }
+}
+
+/// Build a ChoiceDispatch for a Choice expression.
+fn build_choice_dispatch(
+    alts: &[RuleExpr],
+    expr_first_cache: &FxHashMap<ExprId, FirstSet>,
+) -> ChoiceDispatch {
+    let mut literal_map: FxHashMap<SmolStr, Vec<u8>> = FxHashMap::default();
+    let mut ident_alts = Vec::new();
+    let mut int_alts = Vec::new();
+    let mut float_alts = Vec::new();
+    let mut string_alts = Vec::new();
+    let mut universal_alts = Vec::new();
+
+    for (i, alt) in alts.iter().enumerate() {
+        if i >= 255 { break; } // u8 index limit
+        let idx = i as u8;
+        let eid = expr_id(alt);
+        if let Some(fs) = expr_first_cache.get(&eid) {
+            if fs.is_universal || fs.can_be_empty {
+                universal_alts.push(idx);
+                continue;
+            }
+            for lit in &fs.literals {
+                literal_map.entry(lit.clone()).or_default().push(idx);
+            }
+            if fs.can_match_ident { ident_alts.push(idx); }
+            if fs.can_match_int { int_alts.push(idx); }
+            if fs.can_match_float { float_alts.push(idx); }
+            if fs.can_match_string { string_alts.push(idx); }
+        } else {
+            universal_alts.push(idx);
+        }
+    }
+
+    ChoiceDispatch { literal_map, ident_alts, int_alts, float_alts, string_alts, universal_alts }
+}
+
+/// Precompute ChoiceDispatch tables for all Choice expressions in the grammar.
+fn precompute_choice_dispatch(
+    grammar: &Grammar,
+    expr_first_cache: &FxHashMap<ExprId, FirstSet>,
+) -> FxHashMap<ExprId, ChoiceDispatch> {
+    let mut map = FxHashMap::default();
+    for rule in grammar.rules.values() {
+        precompute_choice_dispatch_expr(&rule.expr, expr_first_cache, &mut map);
+    }
+    map
+}
+
+fn precompute_choice_dispatch_expr(
+    expr: &RuleExpr,
+    expr_first_cache: &FxHashMap<ExprId, FirstSet>,
+    map: &mut FxHashMap<ExprId, ChoiceDispatch>,
+) {
+    match expr {
+        RuleExpr::Choice(alts) => {
+            let eid = expr_id(expr);
+            if !map.contains_key(&eid) && alts.len() >= 3 {
+                map.insert(eid, build_choice_dispatch(alts, expr_first_cache));
+            }
+            for alt in alts {
+                precompute_choice_dispatch_expr(alt, expr_first_cache, map);
+            }
+        }
+        RuleExpr::Seq(parts) => {
+            for part in parts {
+                precompute_choice_dispatch_expr(part, expr_first_cache, map);
+            }
+        }
+        RuleExpr::Repeat(inner)
+        | RuleExpr::Repeat1(inner)
+        | RuleExpr::Optional(inner)
+        | RuleExpr::Field(_, inner)
+        | RuleExpr::Token(inner)
+        | RuleExpr::Prec(_, inner)
+        | RuleExpr::PrecLeft(_, inner)
+        | RuleExpr::PrecRight(_, inner) => {
+            precompute_choice_dispatch_expr(inner, expr_first_cache, map);
+        }
+        _ => {}
+    }
+}
+
 /// Result of a grammar-driven parse.
 pub struct RuntimeParseResult {
     pub green_tree: GreenNode,
@@ -395,13 +635,24 @@ const RECOVERY_TOKENS: &[&str] = &[
 pub struct RuntimeParser {
     grammar: Grammar,
     lexer: RuntimeLexer,
-    /// Precomputed FIRST sets for predictive parsing.
-    first_sets: FxHashMap<SmolStr, FirstSet>,
     /// Rule name → compact u16 index for fast set operations.
     rule_indices: FxHashMap<SmolStr, u16>,
     /// Precomputed FIRST sets keyed by expression identity (pointer-based).
     /// Built once in `new()` by walking every expression in the grammar.
     expr_first_cache: FxHashMap<ExprId, FirstSet>,
+    /// Per-rule data indexed by rule_idx (u16).
+    rule_data: Vec<RuleData>,
+    /// Raw pointers to rule expressions, indexed by rule_idx.
+    /// Safe because Grammar is owned by RuntimeParser and outlives all uses.
+    rule_expr_ptrs: Vec<*const RuleExpr>,
+    /// Pre-resolved RuleRef targets keyed by ExprId (pointer identity).
+    /// Eliminates per-call string matching, linear token scans, and HashMap lookups.
+    resolved_refs: FxHashMap<ExprId, ResolvedRef>,
+    /// Custom token name → index for O(1) lookup (replaces linear scan).
+    #[allow(dead_code)]
+    custom_token_indices: FxHashMap<SmolStr, u16>,
+    /// Pre-computed dispatch tables for Choice expressions (≥3 alternatives).
+    choice_dispatch: FxHashMap<ExprId, ChoiceDispatch>,
 }
 
 /// Identity key for a RuleExpr based on its address in the Grammar IR.
@@ -427,24 +678,91 @@ impl RuntimeParser {
             precompute_expr_first(&rule.expr, &grammar, &first_sets, &mut expr_first_cache);
         }
 
+        // Identify transparent rules: pure dispatch rules (Choice of RuleRefs),
+        // rules starting with '_', or single-RuleRef aliases (e.g. `Foo := Bar`).
+        let mut transparent_set = FxHashSet::default();
+        for (name, rule) in &grammar.rules {
+            if name.starts_with('_')
+                || is_pure_dispatch(&rule.expr)
+                || matches!(&rule.expr, RuleExpr::RuleRef(_))
+            {
+                transparent_set.insert(name.clone());
+            }
+        }
+        // Never make the entry rule transparent.
+        if let Some(entry) = &grammar.entry_rule {
+            transparent_set.remove(entry);
+        }
+
+        // Build indexed rule data and expression pointers.
+        let num_rules = rule_indices.len();
+        let mut rule_data = Vec::with_capacity(num_rules);
+        let mut rule_expr_ptrs: Vec<*const RuleExpr> = vec![std::ptr::null(); num_rules];
+        // Initialize rule_data with defaults.
+        rule_data.resize_with(num_rules, || RuleData {
+            name: SmolStr::default(),
+            first_set: FirstSet::default(),
+            is_transparent: false,
+            syntax_kind: SyntaxKind::ERROR,
+        });
+        for (name, &idx) in &rule_indices {
+            let i = idx as usize;
+            rule_data[i].name = name.clone();
+            rule_data[i].first_set = first_sets
+                .get(name)
+                .cloned()
+                .unwrap_or_else(FirstSet::universal);
+            rule_data[i].is_transparent = transparent_set.contains(name);
+            rule_data[i].syntax_kind = rule_name_to_kind(name);
+            if let Some(rule) = grammar.rules.get(name) {
+                rule_expr_ptrs[i] = &rule.expr as *const RuleExpr;
+            }
+        }
+
+        // Build custom token name → index map for O(1) lookup.
+        let mut custom_token_indices = FxHashMap::default();
+        for (i, tok) in grammar.tokens.iter().enumerate() {
+            custom_token_indices.insert(tok.name.clone(), i as u16);
+        }
+
+        // Pre-resolve all RuleRef targets in the grammar.
+        let mut resolved_refs = FxHashMap::default();
+        for rule in grammar.rules.values() {
+            resolve_refs_in_expr(
+                &rule.expr,
+                &rule_indices,
+                &custom_token_indices,
+                &mut resolved_refs,
+            );
+        }
+
+        // Pre-compute choice dispatch tables for all Choice expressions.
+        let choice_dispatch = precompute_choice_dispatch(&grammar, &expr_first_cache);
+
         Self {
             grammar,
             lexer,
-            first_sets,
             rule_indices,
             expr_first_cache,
+            rule_data,
+            rule_expr_ptrs,
+            resolved_refs,
+            custom_token_indices,
+            choice_dispatch,
         }
     }
 
     pub fn parse(&self, source: &str) -> RuntimeParseResult {
         let tokens = self.lexer.tokenize(source);
         let mut ctx = ParseContext::new(
-            &self.grammar,
             &tokens,
             source,
-            &self.first_sets,
             &self.rule_indices,
             &self.expr_first_cache,
+            &self.rule_data,
+            &self.rule_expr_ptrs,
+            &self.resolved_refs,
+            &self.choice_dispatch,
         );
 
         let entry_rule = self
@@ -468,9 +786,10 @@ impl RuntimeParser {
 
                 // Precompute the FIRST set of the child rule for fast rejection.
                 let child_first = self
-                    .first_sets
+                    .rule_indices
                     .get(child.as_str())
-                    .cloned()
+                    .and_then(|&idx| self.rule_data.get(idx as usize))
+                    .map(|rd| rd.first_set.clone())
                     .unwrap_or_else(FirstSet::universal);
 
                 while !ctx.at_eof() {
@@ -480,7 +799,7 @@ impl RuntimeParser {
                     if !child_first.is_universal
                         && peek < ctx.tokens.len()
                         && ctx.tokens[peek].kind != RuntimeTokenKind::Eof
-                        && !child_first.matches_token(&ctx.tokens[peek])
+                        && !child_first.matches_token(&ctx.tokens[peek], source)
                     {
                         ctx.error_recover("unexpected token");
                         continue;
@@ -576,25 +895,31 @@ impl RuntimeParser {
 }
 
 struct ParseContext<'a> {
-    grammar: &'a Grammar,
     tokens: &'a [RawToken],
     source: &'a str,
     pos: usize,
     builder: GreenNodeBuilder,
     errors: Vec<RuntimeParseError>,
-    /// Track (rule_index, token_position) to prevent left-recursion only at the same position.
-    in_progress: FxHashSet<(u16, u32)>,
     /// Nesting depth guard to prevent stack overflow on deep recursion.
     depth: u32,
-    /// Precomputed FIRST sets for predictive lookahead.
-    first_sets: &'a FxHashMap<SmolStr, FirstSet>,
-    /// Negative parse cache: (rule_index, token_position) → known to fail.
-    /// Avoids re-attempting rules that already failed at a given position.
-    fail_cache: FxHashSet<(u16, u32)>,
     /// Rule name → compact u16 index.
     rule_indices: &'a FxHashMap<SmolStr, u16>,
     /// Precomputed FIRST sets per expression (by pointer identity).
     expr_first_cache: &'a FxHashMap<ExprId, FirstSet>,
+    /// Per-rule data indexed by rule_idx.
+    rule_data: &'a [RuleData],
+    /// Raw pointers to rule expressions, indexed by rule_idx.
+    rule_expr_ptrs: &'a [*const RuleExpr],
+    /// Pre-resolved RuleRef targets.
+    resolved_refs: &'a FxHashMap<ExprId, ResolvedRef>,
+    /// Pre-computed choice dispatch tables.
+    choice_dispatch: &'a FxHashMap<ExprId, ChoiceDispatch>,
+    /// Bitset for in_progress: bit at (rule_idx * token_count + token_pos).
+    in_progress_bits: Vec<u64>,
+    /// Bitset for fail_cache: same layout.
+    fail_cache_bits: Vec<u64>,
+    /// Number of tokens (for bitset stride).
+    token_count: usize,
     /// Cached skip_trivia result: (from_pos, to_pos).
     /// Avoids re-scanning trivia from the same position.
     trivia_cache_from: usize,
@@ -605,29 +930,74 @@ const MAX_DEPTH: u32 = 512;
 
 impl<'a> ParseContext<'a> {
     fn new(
-        grammar: &'a Grammar,
         tokens: &'a [RawToken],
         source: &'a str,
-        first_sets: &'a FxHashMap<SmolStr, FirstSet>,
         rule_indices: &'a FxHashMap<SmolStr, u16>,
         expr_first_cache: &'a FxHashMap<ExprId, FirstSet>,
+        rule_data: &'a [RuleData],
+        rule_expr_ptrs: &'a [*const RuleExpr],
+        resolved_refs: &'a FxHashMap<ExprId, ResolvedRef>,
+        choice_dispatch: &'a FxHashMap<ExprId, ChoiceDispatch>,
     ) -> Self {
+        let num_rules = rule_indices.len();
+        let token_count = tokens.len() + 1; // +1 for EOF sentinel
+        let total_bits = num_rules * token_count;
+        let num_words = (total_bits + 63) / 64;
         Self {
-            grammar,
             tokens,
             source,
             pos: 0,
             builder: GreenNodeBuilder::new(),
             errors: Vec::new(),
-            in_progress: FxHashSet::default(),
             depth: 0,
-            first_sets,
-            fail_cache: FxHashSet::default(),
             rule_indices,
             expr_first_cache,
+            rule_data,
+            rule_expr_ptrs,
+            resolved_refs,
+            choice_dispatch,
+            in_progress_bits: vec![0u64; num_words],
+            fail_cache_bits: vec![0u64; num_words],
+            token_count,
             trivia_cache_from: usize::MAX,
             trivia_cache_to: 0,
         }
+    }
+
+    #[inline]
+    fn bit_index(&self, rule_idx: u16, pos: u32) -> (usize, u64) {
+        let idx = rule_idx as usize * self.token_count + pos as usize;
+        (idx / 64, 1u64 << (idx % 64))
+    }
+
+    #[inline]
+    fn in_progress_contains(&self, rule_idx: u16, pos: u32) -> bool {
+        let (word, mask) = self.bit_index(rule_idx, pos);
+        self.in_progress_bits[word] & mask != 0
+    }
+
+    #[inline]
+    fn in_progress_insert(&mut self, rule_idx: u16, pos: u32) {
+        let (word, mask) = self.bit_index(rule_idx, pos);
+        self.in_progress_bits[word] |= mask;
+    }
+
+    #[inline]
+    fn in_progress_remove(&mut self, rule_idx: u16, pos: u32) {
+        let (word, mask) = self.bit_index(rule_idx, pos);
+        self.in_progress_bits[word] &= !mask;
+    }
+
+    #[inline]
+    fn fail_cache_contains(&self, rule_idx: u16, pos: u32) -> bool {
+        let (word, mask) = self.bit_index(rule_idx, pos);
+        self.fail_cache_bits[word] & mask != 0
+    }
+
+    #[inline]
+    fn fail_cache_insert(&mut self, rule_idx: u16, pos: u32) {
+        let (word, mask) = self.bit_index(rule_idx, pos);
+        self.fail_cache_bits[word] |= mask;
     }
 
     fn at_eof(&self) -> bool {
@@ -637,7 +1007,7 @@ impl<'a> ParseContext<'a> {
     #[allow(dead_code)]
     fn current_text(&self) -> &str {
         if self.pos < self.tokens.len() {
-            self.tokens[self.pos].text.as_str()
+            self.tokens[self.pos].text(self.source)
         } else {
             ""
         }
@@ -661,7 +1031,7 @@ impl<'a> ParseContext<'a> {
     fn peek_text(&mut self) -> &str {
         let i = self.skip_trivia_pos();
         if i < self.tokens.len() {
-            self.tokens[i].text.as_str()
+            self.tokens[i].text(self.source)
         } else {
             ""
         }
@@ -687,7 +1057,7 @@ impl<'a> ParseContext<'a> {
                 RuntimeTokenKind::BlockComment => SyntaxKind::BLOCK_COMMENT,
                 _ => SyntaxKind::WHITESPACE,
             };
-            self.builder.token(kind, tok.text.as_str());
+            self.builder.token(kind, tok.text(self.source));
             self.pos += 1;
         }
     }
@@ -697,7 +1067,7 @@ impl<'a> ParseContext<'a> {
         if !self.at_eof() {
             let tok = &self.tokens[self.pos];
             let kind = self.token_to_syntax_kind(tok);
-            self.builder.token(kind, tok.text.as_str());
+            self.builder.token(kind, tok.text(self.source));
             self.pos += 1;
         }
     }
@@ -748,10 +1118,8 @@ impl<'a> ParseContext<'a> {
             while ti < self.tokens.len() && self.tokens[ti].kind.is_trivia() {
                 ti += 1;
             }
-            let text_owned;
             let text: &str = if ti < self.tokens.len() {
-                text_owned = self.tokens[ti].text.clone();
-                text_owned.as_str()
+                self.tokens[ti].text(self.source)
             } else {
                 ""
             };
@@ -778,11 +1146,8 @@ impl<'a> ParseContext<'a> {
         }
 
         self.builder.finish_node();
-        // After skipping tokens, invalidate fail-cache entries at positions
-        // we've moved past.  Keep entries for positions ahead of us — they're
-        // still valid.
-        let new_pos = self.pos as u32;
-        self.fail_cache.retain(|(_rule, pos)| *pos >= new_pos);
+        // After skipping tokens, clear the entire fail cache on recovery.
+        self.fail_cache_bits.fill(0);
     }
 
     /// Check if a token text is a recovery point (statement/item start).
@@ -840,6 +1205,8 @@ impl<'a> ParseContext<'a> {
 
     // ── Rule Parsing ────────────────────────────────────────
 
+    /// Parse a rule by name. Used for top-level entry and error messages.
+    /// For RuleRef dispatch, prefer `parse_resolved_ref` which avoids lookups.
     fn parse_rule(&mut self, name: &str) -> bool {
         if self.depth > MAX_DEPTH {
             self.error_here("maximum parse depth exceeded");
@@ -856,29 +1223,7 @@ impl<'a> ParseContext<'a> {
             _ => {}
         }
 
-        if let Some(idx) = self
-            .grammar
-            .tokens
-            .iter()
-            .position(|t| t.name.as_str() == name)
-        {
-            return self.parse_custom_token(idx as u16);
-        }
-
-        // FIRST-set early rejection: if the lookahead token cannot start this
-        // rule, bail out immediately without recursing into the rule body.
-        if let Some(fs) = self.first_sets.get(name) {
-            if !fs.is_universal && !fs.can_be_empty {
-                let peek = self.skip_trivia_pos();
-                if peek < self.tokens.len()
-                    && self.tokens[peek].kind != RuntimeTokenKind::Eof
-                    && !fs.matches_token(&self.tokens[peek])
-                {
-                    return false;
-                }
-            }
-        }
-
+        // Single HashMap lookup to get rule_idx.
         let rule_idx = match self.rule_indices.get(name) {
             Some(&idx) => idx,
             None => {
@@ -887,67 +1232,121 @@ impl<'a> ParseContext<'a> {
             }
         };
 
-        let guard_key = (rule_idx, self.pos as u32);
+        self.parse_rule_by_idx(rule_idx)
+    }
 
-        // Negative memoization: if we already failed this rule at this position, skip.
-        if self.fail_cache.contains(&guard_key) {
+    /// Fast-path: parse a rule by its pre-resolved index.
+    /// All access is O(1) — no HashMap lookups, no string matching.
+    #[inline]
+    fn parse_rule_by_idx(&mut self, rule_idx: u16) -> bool {
+        if self.depth > MAX_DEPTH {
             return false;
         }
 
-        if self.in_progress.contains(&guard_key) {
+        let rd = &self.rule_data[rule_idx as usize];
+
+        // FIRST-set early rejection using indexed data.
+        if !rd.first_set.is_universal && !rd.first_set.can_be_empty {
+            let peek = self.skip_trivia_pos();
+            if peek < self.tokens.len()
+                && self.tokens[peek].kind != RuntimeTokenKind::Eof
+                && !rd.first_set.matches_token(&self.tokens[peek], self.source)
+            {
+                return false;
+            }
+        }
+
+        let pos = self.pos as u32;
+
+        // Bitset checks — O(1).
+        if self.fail_cache_contains(rule_idx, pos) {
+            return false;
+        }
+        if self.in_progress_contains(rule_idx, pos) {
             return false;
         }
 
-        self.in_progress.insert(guard_key);
+        self.in_progress_insert(rule_idx, pos);
         self.depth += 1;
 
         let save_pos = self.pos;
         let save_builder = self.builder.checkpoint();
 
-        let node_kind = self.rule_name_to_kind(name);
-        self.builder.start_node(node_kind);
+        let is_transparent = rd.is_transparent;
 
-        // Access the rule expression via a copied reference to avoid borrow conflicts.
-        // `self.grammar` is `&'a Grammar` (Copy), so copying it doesn't borrow self.
-        let grammar = self.grammar;
-        let expr = &grammar.rules.get(name).unwrap().expr;
+        if !is_transparent {
+            // Use pre-computed SyntaxKind — no hashing.
+            self.builder.start_node(rd.syntax_kind);
+        }
+
+        // Use precomputed pointer to rule expression — avoids BTreeMap lookup.
+        let expr = unsafe { &*self.rule_expr_ptrs[rule_idx as usize] };
         let matched = self.parse_expr(expr);
 
         if !matched {
-            // If we consumed tokens but still failed, keep what we have as a
-            // partial node rather than throwing it all away. This preserves
-            // tree structure for error recovery.
             if self.pos > save_pos {
-                // We made progress — finish the node with what we have.
-                self.builder.finish_node();
+                if !is_transparent {
+                    self.builder.finish_node();
+                }
             } else {
-                // No progress at all — full rollback.
                 self.builder.rollback(save_builder);
                 self.pos = save_pos;
-                // Cache the failure so we don't retry this rule at this position.
-                self.fail_cache.insert(guard_key);
+                self.fail_cache_insert(rule_idx, pos);
             }
             self.depth -= 1;
-            self.in_progress.remove(&guard_key);
+            self.in_progress_remove(rule_idx, pos);
             return false;
         }
 
-        self.builder.finish_node();
+        if !is_transparent {
+            self.builder.finish_node();
+        }
         self.depth -= 1;
-        self.in_progress.remove(&guard_key);
+        self.in_progress_remove(rule_idx, pos);
         true
     }
 
-    fn rule_name_to_kind(&self, name: &str) -> SyntaxKind {
-        rule_name_to_kind(name)
+    /// Dispatch a pre-resolved RuleRef target directly.
+    #[inline]
+    fn parse_resolved_ref(&mut self, resolved: ResolvedRef) -> bool {
+        match resolved {
+            ResolvedRef::Builtin(BuiltinKind::Ident) => self.parse_builtin_ident(),
+            ResolvedRef::Builtin(BuiltinKind::Integer) => self.parse_builtin_integer(),
+            ResolvedRef::Builtin(BuiltinKind::Float) => self.parse_builtin_float(),
+            ResolvedRef::Builtin(BuiltinKind::String) => self.parse_builtin_string(),
+            ResolvedRef::Builtin(BuiltinKind::Indent) => self.parse_builtin_indent(),
+            ResolvedRef::Builtin(BuiltinKind::Dedent) => self.parse_builtin_dedent(),
+            ResolvedRef::CustomToken(idx) => self.parse_custom_token(idx),
+            ResolvedRef::Rule(idx) => {
+                if idx == u16::MAX {
+                    self.error_here("undefined rule");
+                    false
+                } else {
+                    self.parse_rule_by_idx(idx)
+                }
+            }
+        }
     }
 
     fn parse_expr(&mut self, expr: &RuleExpr) -> bool {
         match expr {
             RuleExpr::Literal(s) => self.parse_literal(s),
-            RuleExpr::RuleRef(name) => self.parse_rule(name),
+            RuleExpr::RuleRef(_) => {
+                // Use pre-resolved target for O(1) dispatch.
+                let eid = expr_id(expr);
+                if let Some(&resolved) = self.resolved_refs.get(&eid) {
+                    self.parse_resolved_ref(resolved)
+                } else {
+                    // Fallback (should not happen for well-formed grammars).
+                    if let RuleExpr::RuleRef(name) = expr {
+                        self.parse_rule(name)
+                    } else {
+                        false
+                    }
+                }
+            }
             RuleExpr::Seq(exprs) => self.parse_seq(exprs),
-            RuleExpr::Choice(exprs) => self.parse_choice(exprs),
+            RuleExpr::Choice(exprs) => self.parse_choice(expr, exprs),
             RuleExpr::Repeat(inner) => self.parse_repeat(inner),
             RuleExpr::Repeat1(inner) => self.parse_repeat1(inner),
             RuleExpr::Optional(inner) => {
@@ -1029,7 +1428,7 @@ impl<'a> ParseContext<'a> {
         if peek_pos >= self.tokens.len() || self.tokens[peek_pos].kind == RuntimeTokenKind::Eof {
             return false;
         }
-        if self.tokens[peek_pos].text.as_str() == expected {
+        if self.tokens[peek_pos].text(self.source) == expected {
             self.bump();
             true
         } else {
@@ -1069,7 +1468,7 @@ impl<'a> ParseContext<'a> {
         true
     }
 
-    fn parse_choice(&mut self, exprs: &[RuleExpr]) -> bool {
+    fn parse_choice(&mut self, choice_expr: &RuleExpr, exprs: &[RuleExpr]) -> bool {
         let save_pos = self.pos;
         let save_errors = self.errors.len();
         let save_builder = self.builder.checkpoint();
@@ -1117,25 +1516,58 @@ impl<'a> ParseContext<'a> {
             }
         }
 
-        for expr in exprs {
-            // Predictive lookahead: skip alternatives whose FIRST set
-            // doesn't include the current token.
-            if have_lookahead {
-                let eid = expr_id(expr);
-                let fs = self.expr_first_cache.get(&eid);
-                if let Some(fs) = fs {
-                    if !fs.is_universal && !fs.can_be_empty && !fs.matches_token(&self.tokens[peek_pos])
-                    {
-                        continue;
+        // Fast path: use pre-computed dispatch table for choices with ≥3 alternatives.
+        if have_lookahead {
+            let choice_eid = expr_id(choice_expr);
+            if let Some(dispatch) = self.choice_dispatch.get(&choice_eid) {
+                let tok = &self.tokens[peek_pos];
+                let (specific, extra) = dispatch.candidates_for(tok, self.source);
+
+                // Try specific matches first, then extra (ident fallbacks), then universals.
+                for &alt_idx in specific.iter().chain(extra.iter()).chain(dispatch.universal_alts.iter()) {
+                    let expr = &exprs[alt_idx as usize];
+                    self.pos = save_pos;
+                    self.errors.truncate(save_errors);
+                    self.builder.rollback(save_builder);
+                    if self.try_parse_expr(expr) {
+                        return true;
                     }
                 }
-            }
 
-            self.pos = save_pos;
-            self.errors.truncate(save_errors);
-            self.builder.rollback(save_builder);
-            if self.try_parse_expr(expr) {
-                return true;
+                self.pos = save_pos;
+                self.errors.truncate(save_errors);
+                self.builder.rollback(save_builder);
+                return false;
+            }
+        }
+
+        // Fallback: linear scan with FIRST-set filtering.
+        if have_lookahead {
+            let tok = &self.tokens[peek_pos];
+            for expr in exprs {
+                let eid = expr_id(expr);
+                let skip = if let Some(fs) = self.expr_first_cache.get(&eid) {
+                    !fs.is_universal && !fs.can_be_empty && !fs.matches_token(tok, self.source)
+                } else {
+                    false
+                };
+                if skip { continue; }
+
+                self.pos = save_pos;
+                self.errors.truncate(save_errors);
+                self.builder.rollback(save_builder);
+                if self.try_parse_expr(expr) {
+                    return true;
+                }
+            }
+        } else {
+            for expr in exprs {
+                self.pos = save_pos;
+                self.errors.truncate(save_errors);
+                self.builder.rollback(save_builder);
+                if self.try_parse_expr(expr) {
+                    return true;
+                }
             }
         }
 

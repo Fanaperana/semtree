@@ -29,7 +29,7 @@ pub fn debug(grammar_path: Option<PathBuf>, file: PathBuf, exe_dir: &Path) -> su
         println!(
             "  [{i:4}] {:?} {:?} [{}..{}]",
             tok.kind,
-            tok.text,
+            tok.text(&source),
             u32::from(tok.range.start()),
             u32::from(tok.range.end())
         );

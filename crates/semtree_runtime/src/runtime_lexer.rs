@@ -69,11 +69,21 @@ impl LiteralTrie {
 }
 
 /// A token produced by the runtime lexer.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Text is NOT stored inline — use `text()` with the source string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RawToken {
     pub kind: RuntimeTokenKind,
-    pub text: SmolStr,
     pub range: TextRange,
+}
+
+impl RawToken {
+    /// Get the token's text from the original source.
+    #[inline]
+    pub fn text<'a>(&self, source: &'a str) -> &'a str {
+        let start = u32::from(self.range.start()) as usize;
+        let end = u32::from(self.range.end()) as usize;
+        &source[start..end]
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -302,7 +312,6 @@ impl RuntimeLexer {
                 pos += 1;
                 tokens.push(RawToken {
                     kind: RuntimeTokenKind::Newline,
-                    text: "\n".into(),
                     range: Self::make_range(start, pos),
                 });
                 continue;
@@ -314,7 +323,6 @@ impl RuntimeLexer {
                 }
                 tokens.push(RawToken {
                     kind: RuntimeTokenKind::Newline,
-                    text: source[start..pos].into(),
                     range: Self::make_range(start, pos),
                 });
                 continue;
@@ -332,7 +340,6 @@ impl RuntimeLexer {
                 }
                 tokens.push(RawToken {
                     kind: RuntimeTokenKind::Whitespace,
-                    text: source[start..pos].into(),
                     range: Self::make_range(start, pos),
                 });
                 continue;
@@ -345,7 +352,6 @@ impl RuntimeLexer {
                 }
                 tokens.push(RawToken {
                     kind: RuntimeTokenKind::LineComment,
-                    text: source[start..pos].into(),
                     range: Self::make_range(start, pos),
                 });
                 continue;
@@ -371,7 +377,6 @@ impl RuntimeLexer {
                 }
                 tokens.push(RawToken {
                     kind: RuntimeTokenKind::BlockComment,
-                    text: source[start..pos].into(),
                     range: Self::make_range(start, pos),
                 });
                 continue;
@@ -384,7 +389,6 @@ impl RuntimeLexer {
                 }
                 tokens.push(RawToken {
                     kind: RuntimeTokenKind::LineComment,
-                    text: source[start..pos].into(),
                     range: Self::make_range(start, pos),
                 });
                 continue;
@@ -420,7 +424,6 @@ impl RuntimeLexer {
                     }
                     tokens.push(RawToken {
                         kind: RuntimeTokenKind::StringLit,
-                        text: source[start..pos].into(),
                         range: Self::make_range(start, pos),
                     });
                     continue;
@@ -440,7 +443,6 @@ impl RuntimeLexer {
                 }
                 tokens.push(RawToken {
                     kind: RuntimeTokenKind::StringLit,
-                    text: source[start..pos].into(),
                     range: Self::make_range(start, pos),
                 });
                 continue;
@@ -459,7 +461,6 @@ impl RuntimeLexer {
                             }
                             tokens.push(RawToken {
                                 kind: RuntimeTokenKind::Integer,
-                                text: source[start..pos].into(),
                                 range: Self::make_range(start, pos),
                             });
                             continue;
@@ -473,7 +474,6 @@ impl RuntimeLexer {
                             }
                             tokens.push(RawToken {
                                 kind: RuntimeTokenKind::Integer,
-                                text: source[start..pos].into(),
                                 range: Self::make_range(start, pos),
                             });
                             continue;
@@ -489,7 +489,6 @@ impl RuntimeLexer {
                             }
                             tokens.push(RawToken {
                                 kind: RuntimeTokenKind::Integer,
-                                text: source[start..pos].into(),
                                 range: Self::make_range(start, pos),
                             });
                             continue;
@@ -512,13 +511,11 @@ impl RuntimeLexer {
                     }
                     tokens.push(RawToken {
                         kind: RuntimeTokenKind::Float,
-                        text: source[start..pos].into(),
                         range: Self::make_range(start, pos),
                     });
                 } else {
                     tokens.push(RawToken {
                         kind: RuntimeTokenKind::Integer,
-                        text: source[start..pos].into(),
                         range: Self::make_range(start, pos),
                     });
                 }
@@ -536,15 +533,14 @@ impl RuntimeLexer {
                         break;
                     }
                 }
-                let text: SmolStr = source[start..pos].into();
-                let kind = if let Some(&idx) = self.keywords.get(&text) {
+                let text_slice = &source[start..pos];
+                let kind = if let Some(&idx) = self.keywords.get(text_slice) {
                     RuntimeTokenKind::Keyword(idx)
                 } else {
                     RuntimeTokenKind::Ident
                 };
                 tokens.push(RawToken {
                     kind,
-                    text,
                     range: Self::make_range(start, pos),
                 });
                 continue;
@@ -552,11 +548,10 @@ impl RuntimeLexer {
 
             // Grammar literals — use trie for O(max_len) lookup.
             if !self.literal_trie.is_empty() {
-                if let Some((lit, idx, end_pos)) = self.literal_trie.longest_match(bytes, pos) {
+                if let Some((_lit, idx, end_pos)) = self.literal_trie.longest_match(bytes, pos) {
                     pos = end_pos;
                     tokens.push(RawToken {
                         kind: RuntimeTokenKind::Literal(idx),
-                        text: lit,
                         range: Self::make_range(start, pos),
                     });
                     continue;
@@ -570,7 +565,6 @@ impl RuntimeLexer {
                         pos += lit.len();
                         tokens.push(RawToken {
                             kind: RuntimeTokenKind::Literal(*idx),
-                            text: lit.clone(),
                             range: Self::make_range(start, pos),
                         });
                         matched = true;
@@ -585,14 +579,12 @@ impl RuntimeLexer {
             pos += c.len_utf8();
             tokens.push(RawToken {
                 kind: RuntimeTokenKind::Error,
-                text: source[start..pos].into(),
                 range: Self::make_range(start, pos),
             });
         }
 
         tokens.push(RawToken {
             kind: RuntimeTokenKind::Eof,
-            text: SmolStr::default(),
             range: Self::make_range(pos, pos),
         });
 
@@ -613,7 +605,6 @@ impl RuntimeLexer {
                 *cursor = m.end();
                 tokens.push(RawToken {
                     kind: extra.kind,
-                    text: source[m.start()..m.end()].into(),
                     range: Self::make_range(m.start(), m.end()),
                 });
                 return true;
@@ -635,7 +626,6 @@ impl RuntimeLexer {
                     *cursor = pos + lit.len();
                     tokens.push(RawToken {
                         kind: RuntimeTokenKind::Custom(ct.id),
-                        text: lit.clone(),
                         range: Self::make_range(pos, pos + lit.len()),
                     });
                     return true;
@@ -647,7 +637,6 @@ impl RuntimeLexer {
                 *cursor = m.end();
                 tokens.push(RawToken {
                     kind: RuntimeTokenKind::Custom(ct.id),
-                    text: source[m.start()..m.end()].into(),
                     range: Self::make_range(m.start(), m.end()),
                 });
                 return true;
@@ -679,7 +668,6 @@ fn inject_indent_tokens(mut tokens: Vec<RawToken>, source: &str) -> Vec<RawToken
             stack.push(col);
             out.push(RawToken {
                 kind: RuntimeTokenKind::Indent,
-                text: "".into(),
                 range: TextRange::new(TextSize::new(0), TextSize::new(0)),
             });
         } else {
@@ -687,7 +675,6 @@ fn inject_indent_tokens(mut tokens: Vec<RawToken>, source: &str) -> Vec<RawToken
                 stack.pop();
                 out.push(RawToken {
                     kind: RuntimeTokenKind::Dedent,
-                    text: "".into(),
                     range: TextRange::new(TextSize::new(0), TextSize::new(0)),
                 });
             }
@@ -700,7 +687,6 @@ fn inject_indent_tokens(mut tokens: Vec<RawToken>, source: &str) -> Vec<RawToken
                 indent_stack.pop();
                 out.push(RawToken {
                     kind: RuntimeTokenKind::Dedent,
-                    text: "".into(),
                     range: TextRange::new(TextSize::new(0), TextSize::new(0)),
                 });
             }
