@@ -383,11 +383,19 @@
 - [ ] Eliminate the per-node `Arc` + per-node `Vec` double allocation (`node.rs`) — the memory-bloat root cause
 - [ ] Re-benchmark memory: target within ~2x of tree-sitter node bytes (currently up to 10x)
 
-### 15.D — Real incremental subtree reuse (turns SpliceMiss → hit)
-- [ ] Replace the whole-tree rebuild in `IncrementalParser` with **path copying** via `GreenNode::replace_child` — rebuild only the ancestor spine of the edited node, Arc-clone untouched siblings (O(depth), not O(n))
-- [ ] Byte-range node reuse: nodes entirely before the edit reused as-is; nodes entirely after reused with a shifted offset; only overlapping nodes reparsed
-- [ ] Descend to the deepest old node fully containing the edit and reparse only its text
-- [ ] Gate with the `ReuseInfo` API: assert single-char insert becomes `DeepSplice` with high `reuse_ratio()` and stays lossless
+### 15.D — Real incremental subtree reuse (turns SpliceMiss → hit) ✅
+- [x] Replace the whole-tree rebuild in `IncrementalParser` with **path copying** via `GreenNode::replace_child` — `splice_node` descends to the deepest node containing the edit and rebuilds only the ancestor spine (untouched siblings are Arc-cloned)
+- [x] Descend to the deepest old node fully containing the edit and reparse only its text (`reparse_child_in_place`), splicing the reparsed `source_file` children (trivia included) back in place
+- [x] Gate with the `ReuseInfo` API + a global losslessness check: single-char insert is now `DeepSplice` with 98–100% `reuse_ratio()`, and every splice is verified to reproduce the source before it's accepted (else full-reparse fallback)
+- [ ] Byte-range reuse for multi-line deletes spanning node boundaries (still `SpliceMiss` → full reparse; correct but not yet reused)
+
+> **Result (15.D):** single-char insert (the most common edit) went from `SpliceMiss` 0% reused to
+> `DeepSplice` 98–100% reused — JSON 342µs → 68µs, Rust 2.08ms → 214µs, Python 1.72ms → 189µs,
+> JS 1.40ms → 222µs. Incremental is now faster than SemTree's own full reparse, and the gap to
+> tree-sitter's incremental closed from 12–95x to 2.6–9.9x. The residual gap is the O(top-level
+> children) spine rebuild on flat files (addressed by 15.A compact trees / balanced repeat nodes).
+> Multi-line deletes that span node boundaries still fall back to a full reparse (correct, not fast).
+
 
 ### 15.C — Faster lexing (the 1 MB tail)
 - [ ] Adopt [`logos`](https://github.com/maciejhirsz/logos) 0.16 (DFA lexer, ~1 GB/s) for hand-authored token sets, or generate a byte-class DFA from the DSL `token` patterns

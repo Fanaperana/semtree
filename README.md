@@ -34,7 +34,7 @@
 |--|------------|---------|
 | **What you get** | Parser only | Parser + formatter + linter + refactoring + IDE + AI APIs |
 | **Cold parse** | Baseline | ~2.3x faster on JSON, ~1.5–2.9x on CSS; slower on JS/Rust/Python |
-| **Incremental** | Mature, fast (µs) | Correct & 100% lossless, but not yet optimized (see below) |
+| **Incremental** | Mature, fast (µs) | Lossless; single-char edits reuse 98–100% of the tree (2.6–9.9x of tree-sitter) |
 | **Memory** | Compact | Higher — builds more granular trees |
 | **Error recovery** | Good | 100% lossless text; faster on most broken inputs |
 | **Setup** | Install per-language parser | One binary, all languages |
@@ -82,14 +82,17 @@ to reproduce the edited source losslessly.
 
 | Edit (10 KB) | Tree-sitter | SemTree | SemTree reuse |
 |--------------|-------------|---------|---------------|
-| Insert char (JSON) | 15 µs | 351 µs | miss — 0% reused |
-| Insert char (JS) | 42 µs | 1.40 ms | miss — 0% reused |
-| Append block (JSON) | 17 µs | 214 µs | sibling splice — 100% |
+| Insert char (JSON) | 14 µs | 68 µs | DeepSplice — 99% reused |
+| Insert char (Rust) | 22 µs | 214 µs | DeepSplice — 100% reused |
+| Insert char (Python) | 56 µs | 189 µs | DeepSplice — 99% reused |
+| Append block (JSON) | 17 µs | 66 µs | SiblingSplice — 100% |
 
-SemTree's incremental path is **correct but not yet fast**: a mid-file single-character insert
-currently falls back to a full reparse (`SpliceMiss`, 0% reused), and even a successful splice
-rebuilds the green tree in O(n). Real subtree reuse is tracked in ROADMAP 4.1 / 11.5 — **no
-incremental speed claims are made until that lands.**
+A single-character insert now reuses **98–100%** of the tree (a `DeepSplice`): SemTree descends to
+the smallest node containing the edit, reparses only its text, and Arc-clones every untouched
+subtree. This is faster than SemTree's own full reparse and within **2.6–9.9x** of tree-sitter's
+incremental (down from 12–95x). The residual gap is the O(top-level-children) spine rebuild on flat
+files, addressed by compact/balanced tree storage (ROADMAP 15.A). Multi-line deletes that span node
+boundaries still fall back to a full reparse (correct, not yet reused).
 
 ### Error Recovery (100% lossless)
 

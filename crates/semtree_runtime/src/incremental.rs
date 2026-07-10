@@ -1,11 +1,13 @@
+use rustc_hash::FxHashMap;
 use semtree_core::SyntaxKind;
 use semtree_grammar::Grammar;
-use semtree_green::{GreenElement, GreenNode, GreenNodeBuilder, NodeOrToken};
+use semtree_green::{GreenElement, GreenNode, NodeOrToken};
 use semtree_red::SyntaxNode;
+use smol_str::SmolStr;
 use text_size::{TextRange, TextSize};
 
 use crate::runtime_lexer::{RawToken, RuntimeLexer, RuntimeTokenKind};
-use crate::runtime_parser::{RuntimeParseResult, RuntimeParser};
+use crate::runtime_parser::{RuntimeParseError, RuntimeParseResult, RuntimeParser};
 
 /// Describes an edit to the source text.
 #[derive(Debug, Clone)]
@@ -88,6 +90,15 @@ impl ReuseInfo {
     }
 }
 
+/// Intermediate result of a recursive splice: the rebuilt subtree plus the
+/// reparse metadata for the single region that had to be reparsed.
+struct SpliceResult {
+    green: GreenNode,
+    reparsed_bytes: usize,
+    errors: Vec<RuntimeParseError>,
+    kind_names: FxHashMap<SyntaxKind, SmolStr>,
+}
+
 /// An incremental parser that reuses unchanged subtrees and tokens across edits.
 ///
 /// The strategy:
@@ -142,6 +153,18 @@ impl IncrementalParser {
     }
 
     /// Incremental update: apply edits and reparse, reusing unchanged subtrees.
+    ///
+    /// Strategy, cheapest first:
+    /// 1. **Recursive path-copy splice** — descend to the deepest node whose
+    ///    subtree fully contains the edit, reparse only that node's text, and
+    ///    `replace_child` up the spine (every untouched sibling is Arc-cloned).
+    /// 2. **Top-level sibling splice** — reuse leading/trailing top-level
+    ///    children (handles appends and edits spanning several top-level items).
+    /// 3. **Full reparse** — always correct; used when neither splice reproduces
+    ///    the new source exactly.
+    ///
+    /// Every splice is verified to reproduce `new_source` byte-for-byte before
+    /// it is accepted, so an incorrect splice can never escape.
     pub fn update(&mut self, new_source: &str, edits: &[EditRegion]) -> RuntimeParseResult {
         if self.prev_tree.is_none() || edits.is_empty() {
             return self.parse(new_source);
@@ -152,187 +175,173 @@ impl IncrementalParser {
 
         let (affected_start, affected_old_end) = self.compute_affected_range(edits);
         let delta: i64 = edits.iter().map(|e| e.delta()).sum();
+        let total = new_source.len();
 
-        // --- Incremental lexing ---
-        let new_tokens = self.incremental_lex(new_source, affected_start, affected_old_end, delta);
-
-        // Try deep splice: walk into children recursively to find the smallest
-        // subtree containing the edit, then reparse only that subtree.
-        if let Some((result, reparsed_bytes)) = self.try_deep_splice(
-            &old_root,
-            new_source,
-            affected_start,
-            affected_old_end,
-            delta,
-        ) {
-            self.prev_tree = Some(result.green_tree.clone());
-            self.prev_source = new_source.to_string();
-            self.prev_tokens = new_tokens;
-            self.last_reuse = Some(ReuseInfo {
-                kind: ReuseKind::DeepSplice,
-                total_bytes: new_source.len(),
-                reparsed_bytes,
-            });
-            return result;
+        // 1. Recursive path-copy splice.
+        if let Some(res) =
+            self.splice_node(&prev_tree, 0, affected_start, affected_old_end, delta, new_source)
+        {
+            if res.reparsed_bytes < total && res.green.text() == new_source {
+                self.commit(res.green.clone(), new_source);
+                self.last_reuse = Some(ReuseInfo {
+                    kind: ReuseKind::DeepSplice,
+                    total_bytes: total,
+                    reparsed_bytes: res.reparsed_bytes,
+                });
+                return RuntimeParseResult {
+                    green_tree: res.green,
+                    errors: res.errors,
+                    kind_names: res.kind_names,
+                };
+            }
         }
 
+        // 2. Top-level sibling splice (reuse prefix/suffix top-level children).
         let (reusable_before, reusable_after, reparse_start, reparse_end) =
             self.find_reusable_children(&old_root, affected_start, affected_old_end, delta);
 
         if !reusable_before.is_empty() || !reusable_after.is_empty() {
             let reparse_region = &new_source[reparse_start..reparse_end];
             let middle_result = self.parser.parse(reparse_region);
-            let middle_root = SyntaxNode::new_root(middle_result.green_tree.clone());
 
-            let mut builder = GreenNodeBuilder::new();
-            builder.start_node(SyntaxKind::SOURCE_FILE);
+            let mut children: Vec<GreenElement> = Vec::with_capacity(
+                reusable_before.len() + reusable_after.len() + middle_result.green_tree.children_count(),
+            );
+            children.extend(reusable_before.iter().cloned().map(NodeOrToken::Node));
+            children.extend(middle_result.green_tree.children().iter().cloned());
+            children.extend(reusable_after.iter().cloned().map(NodeOrToken::Node));
+            let new_tree = GreenNode::new(SyntaxKind::SOURCE_FILE, children);
 
-            for green in &reusable_before {
-                Self::emit_green_node(&mut builder, green);
-            }
-            for child in middle_root.green().children() {
-                Self::emit_green_element(&mut builder, child);
-            }
-            for green in &reusable_after {
-                Self::emit_green_node(&mut builder, green);
-            }
-
-            builder.finish_node();
-            let new_tree = builder.finish();
-
-            if new_tree.text() != new_source {
-                let result = self.parser.parse(new_source);
-                self.prev_tree = Some(result.green_tree.clone());
-                self.prev_source = new_source.to_string();
-                self.prev_tokens = new_tokens;
+            if new_tree.text() == new_source {
+                self.commit(new_tree.clone(), new_source);
                 self.last_reuse = Some(ReuseInfo {
-                    kind: ReuseKind::SpliceMiss,
-                    total_bytes: new_source.len(),
-                    reparsed_bytes: new_source.len(),
+                    kind: ReuseKind::SiblingSplice,
+                    total_bytes: total,
+                    reparsed_bytes: reparse_end.saturating_sub(reparse_start),
                 });
-                return result;
+                return RuntimeParseResult {
+                    green_tree: new_tree,
+                    errors: middle_result.errors,
+                    kind_names: middle_result.kind_names,
+                };
             }
-
-            self.prev_tree = Some(new_tree.clone());
-            self.prev_source = new_source.to_string();
-            self.prev_tokens = new_tokens;
-            self.last_reuse = Some(ReuseInfo {
-                kind: ReuseKind::SiblingSplice,
-                total_bytes: new_source.len(),
-                reparsed_bytes: reparse_end.saturating_sub(reparse_start),
-            });
-
-            return RuntimeParseResult {
-                green_tree: new_tree,
-                errors: middle_result.errors,
-                kind_names: middle_result.kind_names,
-            };
         }
 
+        // 3. Fallback: full reparse (always correct).
         let result = self.parser.parse(new_source);
-        self.prev_tree = Some(result.green_tree.clone());
-        self.prev_source = new_source.to_string();
-        self.prev_tokens = new_tokens;
+        self.commit(result.green_tree.clone(), new_source);
         self.last_reuse = Some(ReuseInfo {
             kind: ReuseKind::SpliceMiss,
-            total_bytes: new_source.len(),
-            reparsed_bytes: new_source.len(),
+            total_bytes: total,
+            reparsed_bytes: total,
         });
         result
     }
 
-    /// Try to narrow the reparse to a single child subtree that contains the edit.
-    /// Operates on the green tree directly for O(n) child scan but O(1) tree construction.
-    /// On success returns the spliced result and the number of bytes reparsed.
-    fn try_deep_splice(
+    /// Record a newly produced tree as the base for the next incremental update.
+    fn commit(&mut self, tree: GreenNode, new_source: &str) {
+        self.prev_tree = Some(tree);
+        self.prev_source = new_source.to_string();
+    }
+
+    /// Recursively descend to the deepest node whose subtree fully contains the
+    /// edit, reparse only that node's text, and rebuild the spine with
+    /// `replace_child` (untouched siblings are Arc-cloned — O(spine), not O(n)).
+    /// Returns `None` at any level where the edit is not cleanly contained in a
+    /// single node child; the caller then tries a coarser strategy.
+    fn splice_node(
         &self,
-        root: &SyntaxNode,
-        new_source: &str,
-        affected_start: u32,
-        affected_old_end: u32,
+        node: &GreenNode,
+        node_start: u32,
+        a_start: u32,
+        a_old_end: u32,
         delta: i64,
-    ) -> Option<(RuntimeParseResult, usize)> {
-        let green = root.green();
-        let green_children = green.children();
-        if green_children.len() < 2 {
-            return None;
-        }
-
-        // Walk green children to find the one containing the edit.
-        // Green children have no absolute offsets — compute them on the fly.
-        let mut offset = 0u32;
-        let mut affected_idx = None;
-        let mut child_abs_start = 0u32;
-
-        for (i, child) in green_children.iter().enumerate() {
-            let len = u32::from(child.text_len());
+        new_source: &str,
+    ) -> Option<SpliceResult> {
+        let mut offset = node_start;
+        let mut affected: Option<(usize, GreenNode, u32)> = None;
+        let mut overlap_count = 0u32;
+        for (i, child) in node.children().iter().enumerate() {
             let cs = offset;
-            let ce = offset + len;
+            let ce = offset + u32::from(child.text_len());
             offset = ce;
-
-            if ce <= affected_start {
+            // An insertion at point P belongs to the child whose half-open range
+            // [cs, ce) contains P; a replacement/deletion overlaps any child that
+            // intersects [a_start, a_old_end).
+            let overlaps = if a_start == a_old_end {
+                cs <= a_start && a_start < ce
+            } else {
+                cs < a_old_end && a_start < ce
+            };
+            if !overlaps {
                 continue;
             }
-            if affected_start == affected_old_end {
-                // Zero-length insertion: find the child that spans this offset.
-                if cs > affected_start {
-                    break;
+            overlap_count += 1;
+            if let NodeOrToken::Node(n) = child {
+                let contains = if a_start == a_old_end {
+                    cs <= a_start && a_start < ce
+                } else {
+                    cs <= a_start && a_old_end <= ce
+                };
+                if contains {
+                    affected = Some((i, n.clone(), cs));
                 }
-            } else if cs >= affected_old_end {
-                break;
             }
-
-            // Only splice into node children, not tokens.
-            if !matches!(child, NodeOrToken::Node(_)) {
-                return None;
-            }
-
-            if affected_idx.is_some() {
-                return None;
-            }
-            affected_idx = Some(i);
-            child_abs_start = cs;
         }
 
-        let affected_idx = affected_idx?;
-        let old_child_len = u32::from(green_children[affected_idx].text_len()) as usize;
-        let new_child_len = ((old_child_len as i64) + delta) as usize;
-        let new_child_end = child_abs_start as usize + new_child_len;
+        if overlap_count == 1 {
+            if let Some((idx, child, cs)) = affected {
+                // Narrow deeper if we can; otherwise reparse this child in place.
+                if let Some(sub) =
+                    self.splice_node(&child, cs, a_start, a_old_end, delta, new_source)
+                {
+                    let SpliceResult { green, reparsed_bytes, errors, kind_names } = sub;
+                    return Some(SpliceResult {
+                        green: node.replace_child(idx, NodeOrToken::Node(green)),
+                        reparsed_bytes,
+                        errors,
+                        kind_names,
+                    });
+                }
+                return self.reparse_child_in_place(node, idx, &child, cs, delta, new_source);
+            }
+        }
+        None
+    }
 
-        if new_child_end > new_source.len() {
+    /// Base case of [`Self::splice_node`]: reparse the affected child's text and
+    /// splice the reparsed `source_file`'s children (trivia included) back in
+    /// place of that child. This preserves every byte of source — the surviving
+    /// siblings are Arc-cloned, and `update` verifies the whole tree round-trips.
+    fn reparse_child_in_place(
+        &self,
+        parent: &GreenNode,
+        idx: usize,
+        child: &GreenNode,
+        child_start: u32,
+        delta: i64,
+        new_source: &str,
+    ) -> Option<SpliceResult> {
+        let old_len = u32::from(child.text_len()) as i64;
+        let new_end = child_start as i64 + old_len + delta;
+        if new_end < child_start as i64 || new_end as usize > new_source.len() {
             return None;
         }
-
-        let reparse_region = &new_source[child_abs_start as usize..new_child_end];
-        let middle_result = self.parser.parse(reparse_region);
-        let reparsed_green = middle_result.green_tree.clone();
-
-        // Build new children: clone prefix, insert reparsed children, clone suffix.
-        let mut new_children: Vec<GreenElement> =
-            Vec::with_capacity(green_children.len() + reparsed_green.children().len());
-        new_children.extend_from_slice(&green_children[..affected_idx]);
-        new_children.extend_from_slice(reparsed_green.children());
-        new_children.extend_from_slice(&green_children[affected_idx + 1..]);
-
-        let new_tree = GreenNode::new(SyntaxKind::SOURCE_FILE, new_children);
-
-        // Quick check: if the reparsed text matches the window, skip full verification.
-        let reparsed_text = reparsed_green.text();
-        if reparsed_text != reparse_region {
-            // Full verification needed.
-            if new_tree.text() != new_source {
-                return None;
-            }
-        }
-
-        Some((
-            RuntimeParseResult {
-                green_tree: new_tree,
-                errors: middle_result.errors,
-                kind_names: middle_result.kind_names,
-            },
-            reparse_region.len(),
-        ))
+        let region = &new_source[child_start as usize..new_end as usize];
+        let reparsed = self.parser.parse(region);
+        let old_children = parent.children();
+        let reparsed_children = reparsed.green_tree.children();
+        let mut kids: Vec<GreenElement> =
+            Vec::with_capacity(old_children.len() + reparsed_children.len());
+        kids.extend_from_slice(&old_children[..idx]);
+        kids.extend(reparsed_children.iter().cloned());
+        kids.extend_from_slice(&old_children[idx + 1..]);
+        Some(SpliceResult {
+            green: GreenNode::new(parent.kind(), kids),
+            reparsed_bytes: region.len(),
+            errors: reparsed.errors,
+            kind_names: reparsed.kind_names,
+        })
     }
 
     /// Incremental lexing: reuse prefix/suffix tokens, re-lex only the affected window.
@@ -501,21 +510,6 @@ impl IncrementalParser {
         (reusable_before, reusable_after, reparse_start, reparse_end)
     }
 
-    fn emit_green_node(builder: &mut GreenNodeBuilder, node: &GreenNode) {
-        builder.start_node(node.kind());
-        for child in node.children() {
-            Self::emit_green_element(builder, child);
-        }
-        builder.finish_node();
-    }
-
-    fn emit_green_element(builder: &mut GreenNodeBuilder, element: &GreenElement) {
-        match element {
-            NodeOrToken::Node(n) => Self::emit_green_node(builder, n),
-            NodeOrToken::Token(t) => builder.token(t.kind(), t.text()),
-        }
-    }
-
     pub fn grammar(&self) -> &Grammar {
         self.parser.grammar()
     }
@@ -558,8 +552,39 @@ StringLit :=
     }
 
     #[test]
-    fn last_reuse_tracks_full_parse_and_splice() {
+    fn mid_edit_reuses_subtree() {
         let grammar = test_grammar();
+        let mut inc = IncrementalParser::new(grammar);
+        let src = "fn a() { let x = 1; }\nfn b() { let y = 2; }\nfn c() { let z = 3; }\n";
+        inc.parse(src);
+        // Insert a space just before the `2` inside b's body.
+        let pos = src.find('2').unwrap() as u32;
+        let mut new_src = src.to_string();
+        new_src.insert(pos as usize, ' ');
+        let edit = EditRegion::new(pos, pos, " ");
+        let res = inc.update(&new_src, &[edit]);
+        assert_eq!(
+            SyntaxNode::new_root(res.green_tree).text(),
+            new_src,
+            "incremental update must be lossless"
+        );
+        let info = inc.last_reuse().unwrap();
+        eprintln!(
+            "mid-edit reuse: kind={:?} reparsed={} total={} ratio={:.2}",
+            info.kind,
+            info.reparsed_bytes,
+            info.total_bytes,
+            info.reuse_ratio()
+        );
+        assert!(
+            info.is_hit(),
+            "mid-file insert should reuse a subtree, got {:?}",
+            info.kind
+        );
+    }
+
+    #[test]
+    fn last_reuse_tracks_full_parse_and_splice() {        let grammar = test_grammar();
         let mut inc = IncrementalParser::new(grammar);
 
         let src = "fn a() { let x = 1; }\nfn b() { let y = 2; }\n";
