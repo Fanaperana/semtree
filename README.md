@@ -33,7 +33,7 @@
 | | Tree-sitter | SemTree |
 |--|------------|---------|
 | **What you get** | Parser only | Parser + formatter + linter + refactoring + IDE + AI APIs |
-| **Cold parse** | Baseline | ~2.3x faster on JSON, ~1.5–2.9x on CSS; slower on JS/Rust/Python |
+| **Cold parse** | Baseline | Faster on JSON (~2.4x) & CSS (~3x); ~parity on JS; ~1.1–2x behind on Python/Rust |
 | **Incremental** | Mature, fast (µs) | Lossless; single-char edits reuse 98–100% of the tree (2.6–9.9x of tree-sitter) |
 | **Memory** | Compact | Higher — builds more granular trees |
 | **Error recovery** | Good | 100% lossless text; faster on most broken inputs |
@@ -64,15 +64,17 @@ Ratio is SemTree median ÷ tree-sitter median (**faster** = SemTree quicker).
 
 | Language | 1 KB | 10 KB | 100 KB | 1 MB |
 |----------|------|-------|--------|------|
-| **JSON** | 2.3x faster | 2.3x faster | 2.3x faster | 2.5x faster |
-| **CSS** | 2.1x faster | 2.5x faster | 1.4x faster | 4.1x slower |
-| **Python** | 1.2x slower | 1.1x slower | 1.04x slower | 1.03x slower |
-| **JavaScript** | 1.2x slower | 1.2x slower | 1.6x slower | 6.1x slower |
-| **Rust** | 2.0x slower | 1.9x slower | 2.1x slower | 4.9x slower |
+| **JSON** | 2.1x faster | 2.3x faster | 2.4x faster | 2.5x faster |
+| **CSS** | 2.3x faster | 2.9x faster | 3.2x faster | 3.1x faster |
+| **Python** | 1.3x slower | 1.1x slower | 1.07x slower | 1.07x slower |
+| **JavaScript** | 1.3x slower | 1.2x slower | 1.09x slower | 1.06x slower |
+| **Rust** | 2.1x slower | 2.1x slower | 2.0x slower | 1.9x slower |
 
-SemTree's recursive-descent runtime is faster on simpler grammars (JSON, CSS) but slower on the
-richer ones, and scaling degrades on very large (1 MB) inputs. Faster parsing on complex grammars
-and large files is an open optimization target (arena allocation, zero-copy tokens — ROADMAP 4.4).
+SemTree now **scales linearly** with input size (the earlier super-linear 1 MB cliff was a
+cache-thrashing packrat memo table, since replaced with a sparse one). It's faster than tree-sitter
+on JSON and CSS at every size, at parity on JavaScript, and a constant ~1.1–2x behind on Python and
+Rust — a fixed gap from the recursive-descent per-rule overhead and per-node allocation, not a
+scaling problem. Closing that gap (thin-pointer node layout) is tracked in ROADMAP 15.A.
 
 ### Incremental Reparse
 

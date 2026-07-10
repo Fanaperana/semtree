@@ -385,8 +385,20 @@
 - [ ] Re-benchmark memory on a **non-repetitive** corpus (ties into 12.3) so the numbers are representative.
 
 > **Result (15.A partial):** structural sharing landed safely (correct, no cold-parse regression, real
-> heap savings on repetitive/incremental workloads). The double-allocation-per-node cost and the JS/Rust
-> 1 MB cliff remain — those need the DST/cstree layout change, deferred as a dedicated migration.
+> heap savings on repetitive/incremental workloads). The double-allocation-per-node cost remains — the
+> per-node `Arc` + `Vec` layout still needs the DST/cstree change (deferred as a dedicated migration)
+> to close the constant-factor gap on Python/Rust.
+
+### 15.E — Parser scaling: sparse memo (fixes the 1 MB cliff) ✅
+- [x] Replaced the packrat memo **bitsets** (`in_progress` + `fail_cache`, a fixed `num_rules × token_count` array = ~10–26 MB per parse) with sparse `FxHashSet`s. The dense bitset scattered accesses across tens of MB and cache-thrashed at scale; the sparse set keeps the active working set cache-resident while preserving identical memoization semantics.
+- [x] Measured the cliff first: lexing is **not** the bottleneck (~6–10 ms / ≤5% of parse time on complex grammars, ~100 MB/s), and neither bitset's *access* was the cost — it was the dense allocation + cache-miss access pattern.
+
+> **Result (15.E):** the super-linear 1 MB cliff is **gone** — SemTree now scales linearly like
+> tree-sitter. JavaScript 1 MB **6.1x → 1.06x** slower (532 ms → 92 ms), CSS **4.1x slower → 3.14x
+> faster** (255 ms → 20 ms), Rust **4.9x → 1.93x** (397 ms → 156 ms). Cold parse is now: JSON &
+> CSS faster at every size, JS ~parity, Python/Rust a consistent ~1.1–2x behind (constant factor,
+> no longer scaling).
+
 
 
 ### 15.D — Real incremental subtree reuse (turns SpliceMiss → hit) ✅
@@ -403,10 +415,11 @@
 > Multi-line deletes that span node boundaries still fall back to a full reparse (correct, not fast).
 
 
-### 15.C — Faster lexing (the 1 MB tail)
-- [ ] Adopt [`logos`](https://github.com/maciejhirsz/logos) 0.16 (DFA lexer, ~1 GB/s) for hand-authored token sets, or generate a byte-class DFA from the DSL `token` patterns
-- [ ] Interim: `memchr` (SIMD) trivia scanning + 256-entry byte-class table in the runtime lexer
-- [ ] Ensure the green builder **interns** token text instead of copying (`RawToken` already carries a zero-copy `TextRange`)
+### 15.C — Faster lexing (the 1 MB tail) ❌ (measured low-value)
+> **Finding:** profiling showed lexing is **not** a bottleneck — ~6–10 ms for a 1 MB file (≤5% of
+> parse time on complex grammars, ~100 MB/s). The 1 MB cliff was the parser memo (see 15.E), not the
+> lexer. This track is deprioritized; revisit only if a future profile shows lexing dominating.
+- [ ] (deferred) `logos`/byte-class DFA lexer — not worth it until lexing is actually a measured bottleneck
 
 **Done when:** node counts are within ~1.5x of tree-sitter, memory within ~2x, single-char incremental inserts are splice hits, and the regenerated `BENCHMARKS.txt` shows SemTree competitive on cold parse for JS/Rust/Python (not just JSON/CSS).
 

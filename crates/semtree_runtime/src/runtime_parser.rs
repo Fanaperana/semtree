@@ -979,12 +979,11 @@ struct ParseContext<'a> {
     resolved_refs: &'a FxHashMap<ExprId, ResolvedRef>,
     /// Pre-computed choice dispatch tables.
     choice_dispatch: &'a FxHashMap<ExprId, ChoiceDispatch>,
-    /// Bitset for in_progress: bit at (rule_idx * token_count + token_pos).
-    in_progress_bits: Vec<u64>,
-    /// Bitset for fail_cache: same layout.
-    fail_cache_bits: Vec<u64>,
-    /// Number of tokens (for bitset stride).
-    token_count: usize,
+    /// Sparse memo of (rule_idx, pos) pairs currently on the parse stack
+    /// (left-recursion guard). Packed key: `(rule as u64) << 32 | pos`.
+    in_progress: FxHashSet<u64>,
+    /// Sparse memo of (rule_idx, pos) pairs known to fail at that position.
+    fail_cache: FxHashSet<u64>,
     /// Cached skip_trivia result: (from_pos, to_pos).
     /// Avoids re-scanning trivia from the same position.
     trivia_cache_from: usize,
@@ -1005,10 +1004,6 @@ impl<'a> ParseContext<'a> {
         resolved_refs: &'a FxHashMap<ExprId, ResolvedRef>,
         choice_dispatch: &'a FxHashMap<ExprId, ChoiceDispatch>,
     ) -> Self {
-        let num_rules = rule_indices.len();
-        let token_count = tokens.len() + 1; // +1 for EOF sentinel
-        let total_bits = num_rules * token_count;
-        let num_words = total_bits.div_ceil(64);
         Self {
             tokens,
             source,
@@ -1022,48 +1017,41 @@ impl<'a> ParseContext<'a> {
             rule_expr_ptrs,
             resolved_refs,
             choice_dispatch,
-            in_progress_bits: vec![0u64; num_words],
-            fail_cache_bits: vec![0u64; num_words],
-            token_count,
+            in_progress: FxHashSet::default(),
+            fail_cache: FxHashSet::default(),
             trivia_cache_from: usize::MAX,
             trivia_cache_to: 0,
         }
     }
 
     #[inline]
-    fn bit_index(&self, rule_idx: u16, pos: u32) -> (usize, u64) {
-        let idx = rule_idx as usize * self.token_count + pos as usize;
-        (idx / 64, 1u64 << (idx % 64))
+    fn memo_key(rule_idx: u16, pos: u32) -> u64 {
+        ((rule_idx as u64) << 32) | pos as u64
     }
 
     #[inline]
     fn in_progress_contains(&self, rule_idx: u16, pos: u32) -> bool {
-        let (word, mask) = self.bit_index(rule_idx, pos);
-        self.in_progress_bits[word] & mask != 0
+        self.in_progress.contains(&Self::memo_key(rule_idx, pos))
     }
 
     #[inline]
     fn in_progress_insert(&mut self, rule_idx: u16, pos: u32) {
-        let (word, mask) = self.bit_index(rule_idx, pos);
-        self.in_progress_bits[word] |= mask;
+        self.in_progress.insert(Self::memo_key(rule_idx, pos));
     }
 
     #[inline]
     fn in_progress_remove(&mut self, rule_idx: u16, pos: u32) {
-        let (word, mask) = self.bit_index(rule_idx, pos);
-        self.in_progress_bits[word] &= !mask;
+        self.in_progress.remove(&Self::memo_key(rule_idx, pos));
     }
 
     #[inline]
     fn fail_cache_contains(&self, rule_idx: u16, pos: u32) -> bool {
-        let (word, mask) = self.bit_index(rule_idx, pos);
-        self.fail_cache_bits[word] & mask != 0
+        self.fail_cache.contains(&Self::memo_key(rule_idx, pos))
     }
 
     #[inline]
     fn fail_cache_insert(&mut self, rule_idx: u16, pos: u32) {
-        let (word, mask) = self.bit_index(rule_idx, pos);
-        self.fail_cache_bits[word] |= mask;
+        self.fail_cache.insert(Self::memo_key(rule_idx, pos));
     }
 
     fn at_eof(&self) -> bool {
@@ -1214,7 +1202,7 @@ impl<'a> ParseContext<'a> {
 
         self.builder.finish_node();
         // After skipping tokens, clear the entire fail cache on recovery.
-        self.fail_cache_bits.fill(0);
+        self.fail_cache.clear();
     }
 
     /// Check if a token text is a recovery point (statement/item start).
