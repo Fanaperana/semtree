@@ -444,27 +444,38 @@ fn publish_diagnostics(
     let Some(doc) = documents.get(key) else {
         return Ok(());
     };
-    let diags: Vec<Diagnostic> = doc
-        .errors
-        .iter()
-        .enumerate()
-        .map(|(i, msg)| Diagnostic {
-            range: Range {
-                start: Position {
-                    line: i as u32,
-                    character: 0,
-                },
-                end: Position {
-                    line: i as u32,
-                    character: 80,
-                },
-            },
-            severity: Some(DiagnosticSeverity::ERROR),
-            message: msg.clone(),
-            source: Some("semtree".into()),
-            ..Default::default()
-        })
-        .collect();
+    let source = doc.session.source();
+
+    // Heuristic: if the grammar produces many errors relative to file size,
+    // the grammar doesn't fully cover the language. Only show diagnostics
+    // when there are few errors (likely real syntax mistakes by the user).
+    let line_count = source.lines().count().max(1);
+    let error_density = doc.errors.len() as f64 / line_count as f64;
+
+    // If more than 10% of lines have errors, suppress all diagnostics —
+    // these are grammar coverage gaps, not user mistakes.
+    let diags: Vec<Diagnostic> = if error_density > 0.1 {
+        vec![]
+    } else {
+        doc.errors
+            .iter()
+            .filter_map(|msg| {
+                let range = parse_error_range(msg, source)?;
+                let display_msg = msg
+                    .find(": ")
+                    .map(|i| &msg[i + 2..])
+                    .unwrap_or(msg)
+                    .to_string();
+                Some(Diagnostic {
+                    range,
+                    severity: Some(DiagnosticSeverity::WARNING),
+                    message: display_msg,
+                    source: Some("semtree".into()),
+                    ..Default::default()
+                })
+            })
+            .collect()
+    };
 
     connection.sender.send(Message::Notification(Notification {
         method: "textDocument/publishDiagnostics".into(),
@@ -475,6 +486,34 @@ fn publish_diagnostics(
         })?,
     }))?;
     Ok(())
+}
+
+/// Parse the byte range from an error string like "error at 42..50: message"
+/// and convert to an LSP Range using line/column positions.
+fn parse_error_range(msg: &str, source: &str) -> Option<Range> {
+    // Format: "error at START..END: ..."
+    let after_at = msg.strip_prefix("error at ")?;
+    let dots = after_at.find("..")?;
+    let start_byte: usize = after_at[..dots].parse().ok()?;
+    let rest = &after_at[dots + 2..];
+    let colon = rest.find(':')?;
+    let end_byte: usize = rest[..colon].parse().ok()?;
+
+    let start_pos = byte_offset_to_position(source, start_byte);
+    let end_pos = byte_offset_to_position(source, end_byte);
+    Some(Range {
+        start: start_pos,
+        end: end_pos,
+    })
+}
+
+fn byte_offset_to_position(source: &str, offset: usize) -> Position {
+    let offset = offset.min(source.len());
+    let before = &source[..offset];
+    let line = before.chars().filter(|&c| c == '\n').count() as u32;
+    let last_newline = before.rfind('\n').map(|i| i + 1).unwrap_or(0);
+    let character = (offset - last_newline) as u32;
+    Position { line, character }
 }
 
 #[allow(deprecated)]
