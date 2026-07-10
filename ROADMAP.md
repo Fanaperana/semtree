@@ -279,9 +279,10 @@
 - [ ] Publish a coverage report per grammar: % of corpus files that parse with zero ERROR nodes
 
 ### 12.4 — Reproducibility & reporting
-- [ ] `semtree bench --json` emits machine-readable results (env, versions, medians, variance)
-- [ ] Check bench inputs and a results snapshot into the repo so anyone can reproduce headline numbers
-- [ ] README benchmark table is generated from a committed results file, not hand-written
+- [ ] `semtree bench --json` emits machine-readable results (env, versions, medians, variance) — still todo (the CLI `benchmark` command is separate from the `semtree_bench` harness)
+- [x] Check bench inputs and a results snapshot into the repo so anyone can reproduce headline numbers — full 100-iteration output committed at `crates/semtree_bench/BENCHMARKS.txt`
+- [x] README benchmark tables regenerated from the committed run (no more "1.5–3.7x faster" / "5,419x" claims); every table now shows real wins **and** losses (JSON/CSS parse + lossless error recovery win; JS/Rust/Python parse, memory, and incremental lose) and links to `BENCHMARKS.txt`. Auto-generation from a machine-readable file is still manual and depends on the `--json` item above.
+
 
 **Done when:** every number in the README is reproducible by `cargo run -p semtree_bench --release`, compares against the real tree-sitter grammar for that language, and is backed by a losslessness assertion.
 
