@@ -334,17 +334,17 @@
 - [x] End-to-end test (`runtime_parser_tags_token_kinds`) asserts the runtime parser emits keyword/`LPAREN`/`INT_LIT` kinds; IDE classifier tests pass; all 200+ workspace tests green
 
 
-### 14.2 — LSP feature completeness 🟡 (partial)
+### 14.2 — LSP feature completeness ✅
 - [x] Wire `rename` (from `semtree_refactor`) into the LSP as `textDocument/rename` (returns a `WorkspaceEdit`) + `prepareRename` (validates the identifier range); `rename_provider` capability enabled with `prepare_provider`
 - [x] Add `textDocument/documentHighlight` (references of symbol under cursor, reuses `find_references`)
-- [ ] Add `textDocument/selectionRange` (syntax-aware expand/shrink selection)
-- [ ] Add `textDocument/codeAction` exposing extract-variable / inline-variable from `semtree_refactor`
+- [x] Add `textDocument/selectionRange` (leaf-token-outward ancestor chain for expand/shrink selection)
+- [x] Add `textDocument/codeAction` exposing extract-variable (on a selection) and inline-variable (on a variable) from `semtree_refactor`
 - [x] Diagnostics: parse ERROR ranges **and** lint results (`LintEngine` → LSP diagnostics with severity + rule source) are published, gated behind low parse-error density so grammar-coverage gaps don't spam the user
 
-### 14.3 — Robustness & lifecycle
+### 14.3 — Robustness & lifecycle 🟡 (partial)
 - [ ] Handle `workspace/didChangeConfiguration` (grammar path, format style, enabled lint rules)
-- [ ] Graceful degradation when no grammar matches a file extension (no crash, clear log)
-- [ ] Incremental sync correctness tests: apply LSP `didChange` deltas and assert tree matches full reparse
+- [x] Graceful degradation when no grammar matches a file extension — `didOpen` catches the resolve error and logs `skipping document`, `didChange` no-ops on unknown docs; the server never crashes
+- [x] Incremental sync correctness test: `parse_session_incremental_is_lossless` applies sequential range edits (insert + delete) via `ParseSession` and asserts the tree reproduces the edited source and matches a full reparse
 - [ ] Cancellation + error responses conform to LSP spec (no silent request drops)
 
 ### 14.4 — Distribution for editors

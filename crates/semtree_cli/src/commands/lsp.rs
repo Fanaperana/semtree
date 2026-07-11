@@ -7,15 +7,17 @@ use std::path::{Path, PathBuf};
 
 use lsp_server::{Connection, Message, Notification, Request, Response};
 use lsp_types::{
-    CompletionItem as LspCompletionItem, CompletionOptions, CompletionParams, CompletionResponse,
-    Diagnostic, DiagnosticSeverity, DocumentFormattingParams, DocumentHighlight,
-    DocumentHighlightKind, DocumentHighlightParams, DocumentSymbol, DocumentSymbolParams,
-    DocumentSymbolResponse, FoldingRange as LspFoldingRange, FoldingRangeKind, FoldingRangeParams,
-    FoldingRangeProviderCapability, GotoDefinitionParams, GotoDefinitionResponse, Hover,
-    HoverContents, HoverParams, HoverProviderCapability, Location, MarkupContent, MarkupKind,
-    OneOf, Position, PrepareRenameResponse, Range, ReferenceParams, RenameOptions, RenameParams,
-    SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokens,
-    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
+    CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams,
+    CodeActionProviderCapability, CompletionItem as LspCompletionItem, CompletionOptions,
+    CompletionParams, CompletionResponse, Diagnostic, DiagnosticSeverity, DocumentFormattingParams,
+    DocumentHighlight, DocumentHighlightKind, DocumentHighlightParams, DocumentSymbol,
+    DocumentSymbolParams, DocumentSymbolResponse, FoldingRange as LspFoldingRange, FoldingRangeKind,
+    FoldingRangeParams, FoldingRangeProviderCapability, GotoDefinitionParams,
+    GotoDefinitionResponse, Hover, HoverContents, HoverParams, HoverProviderCapability, Location,
+    MarkupContent, MarkupKind, OneOf, Position, PrepareRenameResponse, Range, ReferenceParams,
+    RenameOptions, RenameParams, SelectionRange, SelectionRangeParams,
+    SelectionRangeProviderCapability, SemanticToken, SemanticTokenModifier, SemanticTokenType,
+    SemanticTokens, SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
     SemanticTokensParams, SemanticTokensResult, SemanticTokensServerCapabilities,
     ServerCapabilities, SymbolKind, TextDocumentPositionParams, TextDocumentSyncCapability,
     TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri, WorkspaceEdit,
@@ -115,6 +117,8 @@ fn server_capabilities() -> ServerCapabilities {
         })),
         document_formatting_provider: Some(OneOf::Left(true)),
         folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
+        selection_range_provider: Some(SelectionRangeProviderCapability::Simple(true)),
+        code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
         semantic_tokens_provider: Some(
             SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions {
                 legend: SemanticTokensLegend {
@@ -364,6 +368,36 @@ fn handle_request(
                     data,
                 }),
             )))?;
+        }
+        "textDocument/selectionRange" => {
+            let (id, params): (_, SelectionRangeParams) =
+                match req.extract("textDocument/selectionRange") {
+                    Ok(v) => v,
+                    Err(e) => return Err(format!("{e:?}").into()),
+                };
+            let key = uri_key(&params.text_document.uri);
+            let ranges = documents
+                .get(&key)
+                .map(|doc| selection_ranges_for_doc(doc, &params.positions))
+                .unwrap_or_default();
+            connection
+                .sender
+                .send(Message::Response(Response::new_ok(id, ranges)))?;
+        }
+        "textDocument/codeAction" => {
+            let (id, params): (_, CodeActionParams) = match req.extract("textDocument/codeAction") {
+                Ok(v) => v,
+                Err(e) => return Err(format!("{e:?}").into()),
+            };
+            let uri = params.text_document.uri.clone();
+            let key = uri_key(&uri);
+            let actions = documents
+                .get(&key)
+                .map(|doc| code_actions_for_doc(doc, &uri, params.range))
+                .unwrap_or_default();
+            connection
+                .sender
+                .send(Message::Response(Response::new_ok(id, actions)))?;
         }
         "textDocument/formatting" => {
             let (id, params): (_, DocumentFormattingParams) =
@@ -675,6 +709,129 @@ fn byte_offset_to_position(source: &str, offset: usize) -> Position {
 }
 
 #[allow(deprecated)]
+/// Syntax-aware selection ranges: for each position, a chain from the leaf
+/// token outward through its ancestor nodes (used by editors' expand-selection).
+fn selection_ranges_for_doc(doc: &DocumentState, positions: &[Position]) -> Vec<SelectionRange> {
+    let src = doc.session.source();
+    let Some(root) = doc.session.syntax() else {
+        return positions
+            .iter()
+            .map(|p| SelectionRange {
+                range: Range { start: *p, end: *p },
+                parent: None,
+            })
+            .collect();
+    };
+
+    positions
+        .iter()
+        .map(|pos| {
+            let offset = position_to_offset(src, *pos);
+            let mut ranges: Vec<text_size::TextRange> = Vec::new();
+            if let Some(tok) = root.token_at_offset(TextSize::new(offset)) {
+                ranges.push(tok.text_range());
+                if let Some(parent) = tok.parent() {
+                    for anc in parent.ancestors() {
+                        let r = anc.text_range();
+                        if ranges.last() != Some(&r) {
+                            ranges.push(r);
+                        }
+                    }
+                }
+            }
+            if ranges.is_empty() {
+                return SelectionRange {
+                    range: Range { start: *pos, end: *pos },
+                    parent: None,
+                };
+            }
+            // Build the nested chain from outermost (root) inward.
+            let mut sr: Option<Box<SelectionRange>> = None;
+            for r in ranges.iter().rev() {
+                sr = Some(Box::new(SelectionRange {
+                    range: Range {
+                        start: byte_to_position(src, u32::from(r.start())),
+                        end: byte_to_position(src, u32::from(r.end())),
+                    },
+                    parent: sr,
+                }));
+            }
+            *sr.unwrap()
+        })
+        .collect()
+}
+
+/// Offer refactorings as code actions: extract-variable (on a non-empty
+/// selection) and inline-variable (on a variable identifier).
+fn code_actions_for_doc(doc: &DocumentState, uri: &Uri, range: Range) -> Vec<CodeActionOrCommand> {
+    let src = doc.session.source();
+    let mut actions = Vec::new();
+
+    let start = position_to_offset(src, range.start);
+    let end = position_to_offset(src, range.end);
+
+    // Extract variable: requires a non-empty selection.
+    if end > start {
+        let selection = text_size::TextRange::new(TextSize::new(start), TextSize::new(end));
+        if let Some(extraction) = semtree_refactor::extract_variable(src, selection) {
+            let edits: Vec<TextEdit> = extraction
+                .edits
+                .into_iter()
+                .map(|e| TextEdit {
+                    range: Range {
+                        start: byte_to_position(src, u32::from(e.range.start())),
+                        end: byte_to_position(src, u32::from(e.range.end())),
+                    },
+                    new_text: e.new_text,
+                })
+                .collect();
+            actions.push(CodeActionOrCommand::CodeAction(CodeAction {
+                title: "Extract variable".into(),
+                kind: Some(CodeActionKind::REFACTOR_EXTRACT),
+                edit: Some(workspace_edit(uri, edits)),
+                ..Default::default()
+            }));
+        }
+    }
+
+    // Inline variable: cursor on a variable identifier.
+    if let Some(root) = doc.session.syntax() {
+        let model = SemanticModel::analyze(root);
+        if let Some(refactor_edits) = semtree_refactor::inline_variable(root, &model, start) {
+            let edits: Vec<TextEdit> = refactor_edits
+                .into_iter()
+                .map(|e| TextEdit {
+                    range: Range {
+                        start: byte_to_position(src, u32::from(e.range.start())),
+                        end: byte_to_position(src, u32::from(e.range.end())),
+                    },
+                    new_text: e.new_text,
+                })
+                .collect();
+            if !edits.is_empty() {
+                actions.push(CodeActionOrCommand::CodeAction(CodeAction {
+                    title: "Inline variable".into(),
+                    kind: Some(CodeActionKind::REFACTOR_INLINE),
+                    edit: Some(workspace_edit(uri, edits)),
+                    ..Default::default()
+                }));
+            }
+        }
+    }
+
+    actions
+}
+
+/// Wrap a list of edits into a single-file `WorkspaceEdit`.
+fn workspace_edit(uri: &Uri, edits: Vec<TextEdit>) -> WorkspaceEdit {
+    let mut changes = HashMap::new();
+    changes.insert(uri.clone(), edits);
+    WorkspaceEdit {
+        changes: Some(changes),
+        ..Default::default()
+    }
+}
+
 /// The identifier range at `offset`, if a rename can start there.
 fn prepare_rename_range(doc: &DocumentState, offset: u32) -> Option<Range> {
     let root = doc.session.syntax()?;

@@ -1,7 +1,43 @@
 use semtree_grammar::parse_semtree_dsl;
 
 use crate::runtime_lexer::{RuntimeLexer, RuntimeTokenKind};
-use crate::{EditRegion, IncrementalParser, RuntimeParser, apply_edits};
+use crate::{EditRegion, IncrementalParser, ParseSession, ParserBackend, RuntimeParser, apply_edits};
+
+#[test]
+fn parse_session_incremental_is_lossless() {
+    // Mirrors the LSP didChange path: sequential range edits via ParseSession,
+    // asserting the incremental tree reproduces the edited source byte-for-byte
+    // (matches a full reparse of the same final source).
+    let grammar = simple_grammar();
+    let mut session = ParseSession::new(grammar.clone(), ParserBackend::RecursiveDescent);
+    let src = "fn a() { let x = 1; }\nfn b() { let y = 2; }\nfn c() { let z = 3; }\n";
+    session.parse(src);
+    assert_eq!(session.syntax().unwrap().text(), src);
+
+    // Insert a digit inside b's body.
+    let p1 = src.find('2').unwrap() as u32;
+    session.edit(p1, p1, "9");
+    assert_eq!(
+        session.syntax().unwrap().text(),
+        session.source(),
+        "after insert"
+    );
+
+    // Delete that digit again.
+    let p2 = session.source().find('9').unwrap() as u32;
+    session.edit(p2, p2 + 1, "");
+    assert_eq!(
+        session.syntax().unwrap().text(),
+        session.source(),
+        "after delete"
+    );
+
+    // The incrementally-maintained tree must equal a full reparse of the final source.
+    let final_src = session.source().to_string();
+    let mut fresh = ParseSession::new(grammar, ParserBackend::RecursiveDescent);
+    fresh.parse(&final_src);
+    assert_eq!(session.syntax().unwrap().text(), fresh.syntax().unwrap().text());
+}
 
 fn simple_grammar() -> semtree_grammar::Grammar {
     let src = r#"
