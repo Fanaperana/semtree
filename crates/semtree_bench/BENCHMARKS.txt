@@ -9,26 +9,26 @@ Running cold parse benchmarks... done!
 ╠══════════════════════╤════════════════════╤════════════════════╤═════════════════╣
 ║ Test                 │ Tree-sitter        │ SemTree            │ Ratio (ST/TS)   ║
 ╠══════════════════════╪════════════════════╪════════════════════╪═════════════════╣
-║ JSON 1KB cold        │ 68.6µs (15 MB/s)   │ 33.0µs (30 MB/s)   │ 2.08x faster    ║
-║ JSON 10KB cold       │ 629.4µs (16 MB/s)  │ 275.6µs (37 MB/s)  │ 2.28x faster    ║
-║ JSON 100KB cold      │ 6.52ms (16 MB/s)   │ 2.68ms (38 MB/s)   │ 2.43x faster    ║
-║ JSON 1MB cold        │ 70.75ms (15 MB/s)  │ 28.76ms (36 MB/s)  │ 2.46x faster    ║
-║ JavaScript 1KB cold  │ 103.2µs (13 MB/s)  │ 136.4µs (10 MB/s)  │ 1.32x slower    ║
-║ JavaScript 10KB cold │ 779.1µs (12 MB/s)  │ 904.6µs (10 MB/s)  │ 1.16x slower    ║
-║ JavaScript 100KB cold│ 8.38ms (12 MB/s)   │ 9.16ms (11 MB/s)   │ 1.09x slower    ║
-║ JavaScript 1MB cold  │ 88.58ms (12 MB/s)  │ 93.56ms (11 MB/s)  │ 1.06x slower    ║
-║ Rust 1KB cold        │ 99.9µs (13 MB/s)   │ 207.4µs (7 MB/s)   │ 2.08x slower    ║
-║ Rust 10KB cold       │ 725.8µs (14 MB/s)  │ 1.48ms (7 MB/s)    │ 2.05x slower    ║
-║ Rust 100KB cold      │ 7.61ms (13 MB/s)   │ 14.84ms (7 MB/s)   │ 1.95x slower    ║
-║ Rust 1MB cold        │ 79.39ms (13 MB/s)  │ 153.56ms (7 MB/s)  │ 1.93x slower    ║
-║ CSS 1KB cold         │ 57.4µs (17 MB/s)   │ 24.5µs (44 MB/s)   │ 2.34x faster    ║
-║ CSS 10KB cold        │ 559.1µs (18 MB/s)  │ 192.2µs (53 MB/s)  │ 2.91x faster    ║
-║ CSS 100KB cold       │ 5.82ms (18 MB/s)   │ 1.80ms (54 MB/s)   │ 3.22x faster    ║
-║ CSS 1MB cold         │ 61.26ms (17 MB/s)  │ 19.50ms (54 MB/s)  │ 3.14x faster    ║
-║ Python 1KB cold      │ 132.4µs (11 MB/s)  │ 167.2µs (8 MB/s)   │ 1.26x slower    ║
-║ Python 10KB cold     │ 1.01ms (10 MB/s)   │ 1.14ms (9 MB/s)    │ 1.13x slower    ║
-║ Python 100KB cold    │ 10.62ms (9 MB/s)   │ 11.34ms (9 MB/s)   │ 1.07x slower    ║
-║ Python 1MB cold      │ 110.00ms (10 MB/s) │ 117.56ms (9 MB/s)  │ 1.07x slower    ║
+║ JSON 1KB cold        │ 89.5µs (11 MB/s)   │ 37.7µs (24 MB/s)   │ 2.37x faster    ║
+║ JSON 10KB cold       │ 671.5µs (15 MB/s)  │ 259.1µs (39 MB/s)  │ 2.59x faster    ║
+║ JSON 100KB cold      │ 6.74ms (12 MB/s)   │ 2.59ms (39 MB/s)   │ 2.61x faster    ║
+║ JSON 1MB cold        │ 72.92ms (14 MB/s)  │ 27.12ms (38 MB/s)  │ 2.69x faster    ║
+║ JavaScript 1KB cold  │ 104.8µs (13 MB/s)  │ 122.2µs (11 MB/s)  │ 1.17x slower    ║
+║ JavaScript 10KB cold │ 771.9µs (13 MB/s)  │ 830.4µs (12 MB/s)  │ 1.08x slower    ║
+║ JavaScript 100KB cold│ 8.46ms (12 MB/s)   │ 8.51ms (12 MB/s)   │ 1.01x slower    ║
+║ JavaScript 1MB cold  │ 88.79ms (12 MB/s)  │ 87.75ms (12 MB/s)  │ 1.01x faster    ║
+║ Rust 1KB cold        │ 101.5µs (14 MB/s)  │ 194.5µs (7 MB/s)   │ 1.92x slower    ║
+║ Rust 10KB cold       │ 782.5µs (7 MB/s)   │ 1.34ms (7 MB/s)    │ 1.72x slower    ║
+║ Rust 100KB cold      │ 7.90ms (12 MB/s)   │ 13.05ms (8 MB/s)   │ 1.65x slower    ║
+║ Rust 1MB cold        │ 82.66ms (12 MB/s)  │ 140.16ms (7 MB/s)  │ 1.70x slower    ║
+║ CSS 1KB cold         │ 58.4µs (18 MB/s)   │ 25.5µs (42 MB/s)   │ 2.29x faster    ║
+║ CSS 10KB cold        │ 561.1µs (18 MB/s)  │ 193.5µs (53 MB/s)  │ 2.90x faster    ║
+║ CSS 100KB cold       │ 5.83ms (17 MB/s)   │ 1.83ms (55 MB/s)   │ 3.19x faster    ║
+║ CSS 1MB cold         │ 61.06ms (17 MB/s)  │ 18.68ms (56 MB/s)  │ 3.27x faster    ║
+║ Python 1KB cold      │ 138.9µs (10 MB/s)  │ 161.1µs (9 MB/s)   │ 1.16x slower    ║
+║ Python 10KB cold     │ 1.04ms (10 MB/s)   │ 1.12ms (9 MB/s)    │ 1.08x slower    ║
+║ Python 100KB cold    │ 10.65ms (10 MB/s)  │ 10.90ms (9 MB/s)   │ 1.02x slower    ║
+║ Python 1MB cold      │ 111.72ms (9 MB/s)  │ 115.42ms (9 MB/s)  │ 1.03x slower    ║
 ╚══════════════════════╧════════════════════╧════════════════════╧═════════════════╝
 Running incremental reparse benchmarks... done!
 
@@ -37,11 +37,11 @@ Running incremental reparse benchmarks... done!
 ╠═══════════════════════╤════════════════════════╤══════════════════════════════════════════════════════════╤═════════════════╣
 ║ Test                  │ Tree-sitter            │ SemTree                                                  │ Ratio (ST/TS)   ║
 ╠═══════════════════════╪════════════════════════╪══════════════════════════════════════════════════════════╪═════════════════╣
-║ JSON insert char      │ 14.8µs (edit+reparse)  │ 21.1µs inc / 276.5µs full [✓] DeepSplice 99% reused      │ 1.43x slower    ║
-║ JavaScript insert char│ 41.7µs (edit+reparse)  │ 114.2µs inc / 888.9µs full [✓] DeepSplice 98% reused     │ 2.74x slower    ║
-║ Rust insert char      │ 21.8µs (edit+reparse)  │ 115.7µs inc / 1.50ms full [✓] DeepSplice 100% reused     │ 5.32x slower    ║
-║ CSS insert char       │ 20.5µs (edit+reparse)  │ 51.2µs inc / 195.2µs full [✓] DeepSplice 99% reused      │ 2.50x slower    ║
-║ Python insert char    │ 59.1µs (edit+reparse)  │ 112.0µs inc / 1.14ms full [✓] DeepSplice 99% reused      │ 1.89x slower    ║
+║ JSON insert char      │ 14.8µs (edit+reparse)  │ 20.9µs inc / 256.0µs full [✓] DeepSplice 99% reused      │ 1.42x slower    ║
+║ JavaScript insert char│ 41.9µs (edit+reparse)  │ 115.3µs inc / 824.7µs full [✓] DeepSplice 98% reused     │ 2.75x slower    ║
+║ Rust insert char      │ 21.9µs (edit+reparse)  │ 118.1µs inc / 1.25ms full [✓] DeepSplice 100% reused     │ 5.40x slower    ║
+║ CSS insert char       │ 20.2µs (edit+reparse)  │ 50.1µs inc / 194.9µs full [✓] DeepSplice 99% reused      │ 2.49x slower    ║
+║ Python insert char    │ 58.8µs (edit+reparse)  │ 98.6µs inc / 1.10ms full [✓] DeepSplice 99% reused       │ 1.68x slower    ║
 ╚═══════════════════════╧════════════════════════╧══════════════════════════════════════════════════════════╧═════════════════╝
 Running detailed incremental benchmarks... done!
 
@@ -50,12 +50,12 @@ Running detailed incremental benchmarks... done!
 ╠════════════════════════╤═════════════════════════╤═════════════════════════════════════════════════════════════╤═════════════════╣
 ║ Test                   │ Tree-sitter             │ SemTree                                                     │ Ratio (ST/TS)   ║
 ╠════════════════════════╪═════════════════════════╪═════════════════════════════════════════════════════════════╪═════════════════╣
-║ JSON insert char       │ 14.5µs (edit+reparse)   │ 21.3µs inc / 276.8µs full [✓] DeepSplice 99% reused         │ 1.46x slower    ║
-║ JSON delete line       │ 232.9µs (edit+reparse)  │ 7.0µs inc / 542ns full [✓] SpliceMiss 0% reused             │ 33.27x faster   ║
-║ JSON append block      │ 16.9µs (edit+reparse)   │ 20.6µs inc / 282.3µs full [✓] SiblingSplice 100% reused     │ 1.22x slower    ║
-║ JavaScript insert char │ 41.9µs (edit+reparse)   │ 119.0µs inc / 902.3µs full [✓] DeepSplice 98% reused        │ 2.84x slower    ║
-║ JavaScript delete line │ 539.9µs (edit+reparse)  │ 1.85ms inc / 880.5µs full [✓] SpliceMiss 0% reused          │ 3.43x slower    ║
-║ JavaScript append block│ 43.0µs (edit+reparse)   │ 92.3µs inc / 921.2µs full [✓] SiblingSplice 100% reused     │ 2.15x slower    ║
+║ JSON insert char       │ 14.6µs (edit+reparse)   │ 21.1µs inc / 257.5µs full [✓] DeepSplice 99% reused         │ 1.44x slower    ║
+║ JSON delete line       │ 233.1µs (edit+reparse)  │ 6.8µs inc / 542ns full [✓] SpliceMiss 0% reused             │ 34.11x faster   ║
+║ JSON append block      │ 17.2µs (edit+reparse)   │ 20.0µs inc / 261.5µs full [✓] SiblingSplice 100% reused     │ 1.16x slower    ║
+║ JavaScript insert char │ 41.6µs (edit+reparse)   │ 111.7µs inc / 819.6µs full [✓] DeepSplice 98% reused        │ 2.68x slower    ║
+║ JavaScript delete line │ 533.2µs (edit+reparse)  │ 1.69ms inc / 800.6µs full [✓] SpliceMiss 0% reused          │ 3.17x slower    ║
+║ JavaScript append block│ 43.2µs (edit+reparse)   │ 89.1µs inc / 827.1µs full [✓] SiblingSplice 100% reused     │ 2.06x slower    ║
 ╚════════════════════════╧═════════════════════════╧═════════════════════════════════════════════════════════════╧═════════════════╝
 Running memory benchmarks... done!
 
@@ -87,13 +87,13 @@ Running error recovery benchmarks... done!
 ╠════════════════════════════╤══════════════╤══════════════╤═════════════════╣
 ║ Test                       │ Tree-sitter  │ SemTree      │ Ratio (ST/TS)   ║
 ╠════════════════════════════╪══════════════╪══════════════╪═════════════════╣
-║ Missing semicolons (JS)    │ 20.5µs       │ 29.0µs       │ 1.41x slower    ║
-║ Unclosed braces (JS)       │ 75.2µs       │ 18.5µs       │ 4.07x faster    ║
-║ Garbage tokens (JS)        │ 30.4µs       │ 16.3µs       │ 1.86x faster    ║
-║ Mixed valid/invalid (Rust) │ 61.2µs       │ 31.0µs       │ 1.97x faster    ║
-║ Invalid JSON               │ 21.3µs       │ 7.6µs        │ 2.81x faster    ║
-║ Missing colons (CSS)       │ 33.9µs       │ 9.4µs        │ 3.61x faster    ║
-║ Indentation errors (Python)│ 19.4µs       │ 39.9µs       │ 2.05x slower    ║
+║ Missing semicolons (JS)    │ 21.0µs       │ 29.2µs       │ 1.39x slower    ║
+║ Unclosed braces (JS)       │ 77.5µs       │ 18.0µs       │ 4.30x faster    ║
+║ Garbage tokens (JS)        │ 30.9µs       │ 15.8µs       │ 1.96x faster    ║
+║ Mixed valid/invalid (Rust) │ 65.1µs       │ 30.4µs       │ 2.14x faster    ║
+║ Invalid JSON               │ 21.4µs       │ 7.5µs        │ 2.87x faster    ║
+║ Missing colons (CSS)       │ 35.0µs       │ 9.8µs        │ 3.57x faster    ║
+║ Indentation errors (Python)│ 20.4µs       │ 39.6µs       │ 1.94x slower    ║
 ╚════════════════════════════╧══════════════╧══════════════╧═════════════════╝
 
 ╔═════════════════════════════════════════════════════════════════════════════════════════════════════════════════╗
@@ -116,86 +116,85 @@ Running tree traversal benchmarks... done!
 ╠════════════════════╤═══════════════════════╤════════════════════════╤═════════════════╣
 ║ Test               │ Tree-sitter           │ SemTree                │ Ratio (ST/TS)   ║
 ╠════════════════════╪═══════════════════════╪════════════════════════╪═════════════════╣
-║ JSON traverse      │ 188.8µs (6876 nodes)  │ 213.9µs (10120 nodes)  │ 1.13x slower    ║
-║ JavaScript traverse│ 153.0µs (4577 nodes)  │ 450.8µs (19144 nodes)  │ 2.95x slower    ║
-║ Rust traverse      │ 149.0µs (4222 nodes)  │ 482.0µs (20080 nodes)  │ 3.24x slower    ║
-║ CSS traverse       │ 97.1µs (3597 nodes)   │ 151.7µs (10062 nodes)  │ 1.56x slower    ║
-║ Python traverse    │ 156.5µs (4423 nodes)  │ 396.5µs (16944 nodes)  │ 2.53x slower    ║
+║ JSON traverse      │ 191.0µs (6876 nodes)  │ 216.1µs (10120 nodes)  │ 1.13x slower    ║
+║ JavaScript traverse│ 156.2µs (4577 nodes)  │ 469.6µs (19144 nodes)  │ 3.01x slower    ║
+║ Rust traverse      │ 168.8µs (4222 nodes)  │ 477.1µs (20080 nodes)  │ 2.83x slower    ║
+║ CSS traverse       │ 99.2µs (3597 nodes)   │ 154.8µs (10062 nodes)  │ 1.56x slower    ║
+║ Python traverse    │ 158.2µs (4423 nodes)  │ 391.3µs (16944 nodes)  │ 2.47x slower    ║
 ╚════════════════════╧═══════════════════════╧════════════════════════╧═════════════════╝
 Running SemTree-only benchmarks... done!
 
 ╔═══════════════════════════════════════════════════════╗
 ║    6. SEMTREE BONUS: Features tree-sitter can't do    ║
 ╠═════════════════════════════════╤══════════════════════╣
-║ Semantic model build (10KB Rust)│ 625.0µs (median)     ║
+║ Semantic model build (10KB Rust)│ 609.1µs (median)     ║
 ║ Query execution (empty pattern) │ 0ns (median)         ║
-║ Find all identifiers (10KB)     │ 328.7µs (median)     ║
-║ Format (10KB Rust)              │ 285.2µs (median)     ║
-║ Lint with semantics (10KB)      │ 695.8µs (median)     ║
-║ Lint syntax-only (10KB)         │ 698.3µs (median)     ║
+║ Find all identifiers (10KB)     │ 341.2µs (median)     ║
+║ Format (10KB Rust)              │ 292.7µs (median)     ║
+║ Lint with semantics (10KB)      │ 697.6µs (median)     ║
+║ Lint syntax-only (10KB)         │ 694.8µs (median)     ║
 ╚═════════════════════════════════╧══════════════════════╝
 
 ═══════════════════════════════════════════════════════════════
 SUMMARY (computed from this run — shipped grammars/*.semtree)
 ═══════════════════════════════════════════════════════════════
-  Parse Speed (10KB):  SemTree 1.02x slower on average
-  Incremental:         SemTree 2.78x slower on average
+  Parse Speed (10KB):  SemTree 1.08x faster on average
+  Incremental:         SemTree 2.75x slower on average
   Memory (sample):       28 distinct (1032 struct), ~1KB (1.7x src) vs 699 nodes, ~32KB (32.2x src)
   Error Recovery:        see tables above
   Bonus Features:        semantic model, format, lint — TS has none built-in
 
   Per-test cold-parse ratios (all languages, all sizes):
-    ✓ JSON 1KB cold          2.08x faster
-    ✓ JSON 10KB cold         2.28x faster
-    ✓ JSON 100KB cold        2.43x faster
-    ✓ JSON 1MB cold          2.46x faster
-    ✗ JavaScript 1KB cold    1.32x slower
-    ✗ JavaScript 10KB cold   1.16x slower
-    ✗ JavaScript 100KB cold  1.09x slower
-    ✗ JavaScript 1MB cold    1.06x slower
-    ✗ Rust 1KB cold          2.08x slower
-    ✗ Rust 10KB cold         2.05x slower
-    ✗ Rust 100KB cold        1.95x slower
-    ✗ Rust 1MB cold          1.93x slower
-    ✓ CSS 1KB cold           2.34x faster
-    ✓ CSS 10KB cold          2.91x faster
-    ✓ CSS 100KB cold         3.22x faster
-    ✓ CSS 1MB cold           3.14x faster
-    ✗ Python 1KB cold        1.26x slower
-    ✗ Python 10KB cold       1.13x slower
-    ✗ Python 100KB cold      1.07x slower
-    ✗ Python 1MB cold        1.07x slower
+    ✓ JSON 1KB cold          2.37x faster
+    ✓ JSON 10KB cold         2.59x faster
+    ✓ JSON 100KB cold        2.61x faster
+    ✓ JSON 1MB cold          2.69x faster
+    ✗ JavaScript 1KB cold    1.17x slower
+    ✗ JavaScript 10KB cold   1.08x slower
+    ✗ JavaScript 100KB cold  1.01x slower
+    ✓ JavaScript 1MB cold    1.01x faster
+    ✗ Rust 1KB cold          1.92x slower
+    ✗ Rust 10KB cold         1.72x slower
+    ✗ Rust 100KB cold        1.65x slower
+    ✗ Rust 1MB cold          1.70x slower
+    ✓ CSS 1KB cold           2.29x faster
+    ✓ CSS 10KB cold          2.90x faster
+    ✓ CSS 100KB cold         3.19x faster
+    ✓ CSS 1MB cold           3.27x faster
+    ✗ Python 1KB cold        1.16x slower
+    ✗ Python 10KB cold       1.08x slower
+    ✗ Python 100KB cold      1.02x slower
+    ✗ Python 1MB cold        1.03x slower
 
   Where SemTree is SLOWER than Tree-sitter (honest losses):
-    ✗ Parse: JavaScript 1KB cold  (1.32x slower)
-    ✗ Parse: JavaScript 10KB cold  (1.16x slower)
-    ✗ Parse: JavaScript 100KB cold  (1.09x slower)
-    ✗ Parse: JavaScript 1MB cold  (1.06x slower)
-    ✗ Parse: Rust 1KB cold  (2.08x slower)
-    ✗ Parse: Rust 10KB cold  (2.05x slower)
-    ✗ Parse: Rust 100KB cold  (1.95x slower)
-    ✗ Parse: Rust 1MB cold  (1.93x slower)
-    ✗ Parse: Python 1KB cold  (1.26x slower)
-    ✗ Parse: Python 10KB cold  (1.13x slower)
-    ✗ Parse: Python 100KB cold  (1.07x slower)
-    ✗ Parse: Python 1MB cold  (1.07x slower)
-    ✗ Incremental: JSON insert char  (1.43x slower)
-    ✗ Incremental: JavaScript insert char  (2.74x slower)
-    ✗ Incremental: Rust insert char  (5.32x slower)
-    ✗ Incremental: CSS insert char  (2.50x slower)
-    ✗ Incremental: Python insert char  (1.89x slower)
-    ✗ Incremental(detail): JSON insert char  (1.46x slower)
-    ✗ Incremental(detail): JSON append block  (1.22x slower)
-    ✗ Incremental(detail): JavaScript insert char  (2.84x slower)
-    ✗ Incremental(detail): JavaScript delete line  (3.43x slower)
-    ✗ Incremental(detail): JavaScript append block  (2.15x slower)
-    ✗ ErrorRecovery: Missing semicolons (JS)  (1.41x slower)
-    ✗ ErrorRecovery: Indentation errors (Python)  (2.05x slower)
+    ✗ Parse: JavaScript 1KB cold  (1.17x slower)
+    ✗ Parse: JavaScript 10KB cold  (1.08x slower)
+    ✗ Parse: JavaScript 100KB cold  (1.01x slower)
+    ✗ Parse: Rust 1KB cold  (1.92x slower)
+    ✗ Parse: Rust 10KB cold  (1.72x slower)
+    ✗ Parse: Rust 100KB cold  (1.65x slower)
+    ✗ Parse: Rust 1MB cold  (1.70x slower)
+    ✗ Parse: Python 1KB cold  (1.16x slower)
+    ✗ Parse: Python 10KB cold  (1.08x slower)
+    ✗ Parse: Python 100KB cold  (1.02x slower)
+    ✗ Parse: Python 1MB cold  (1.03x slower)
+    ✗ Incremental: JSON insert char  (1.42x slower)
+    ✗ Incremental: JavaScript insert char  (2.75x slower)
+    ✗ Incremental: Rust insert char  (5.40x slower)
+    ✗ Incremental: CSS insert char  (2.49x slower)
+    ✗ Incremental: Python insert char  (1.68x slower)
+    ✗ Incremental(detail): JSON insert char  (1.44x slower)
+    ✗ Incremental(detail): JSON append block  (1.16x slower)
+    ✗ Incremental(detail): JavaScript insert char  (2.68x slower)
+    ✗ Incremental(detail): JavaScript delete line  (3.17x slower)
+    ✗ Incremental(detail): JavaScript append block  (2.06x slower)
+    ✗ ErrorRecovery: Missing semicolons (JS)  (1.39x slower)
+    ✗ ErrorRecovery: Indentation errors (Python)  (1.94x slower)
     ✗ Traversal: JSON traverse  (1.13x slower)
-    ✗ Traversal: JavaScript traverse  (2.95x slower)
-    ✗ Traversal: Rust traverse  (3.24x slower)
+    ✗ Traversal: JavaScript traverse  (3.01x slower)
+    ✗ Traversal: Rust traverse  (2.83x slower)
     ✗ Traversal: CSS traverse  (1.56x slower)
-    ✗ Traversal: Python traverse  (2.53x slower)
+    ✗ Traversal: Python traverse  (2.47x slower)
 
 Notes:
   - SemTree uses grammars from grammars/*.semtree (not inline toy grammars)

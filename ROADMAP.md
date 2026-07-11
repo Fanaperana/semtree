@@ -391,23 +391,25 @@
 > full DST/cstree layout change is therefore **low-ROI** for the current gap and is deprioritized;
 > the dominant cost is parser CPU (see 15.F).
 
-### 15.F — Precedence-climbing expression parsing (the real remaining lever) 🔜
-> **Measured finding:** SemTree is *faster* than tree-sitter on flat grammars (JSON 2.4x, CSS 3.1x)
-> and slower on exactly the grammars with **expression precedence chains** (Rust ~2x, JS/Python
-> ~1.1x). The runtime parser literally descends ~15 chain rules per expression
-> (`Expression → AssignExpr → RangeExpr → OrExpr → … → primary`), even for a bare literal. That
-> per-expression rule-call overhead — not allocation — is the bulk of the remaining gap.
-- [ ] Use the Grammar IR's existing `Prec`/`PrecLeft`/`PrecRight` annotations to drive a
-      precedence-climbing (Pratt) loop in the runtime parser, collapsing the ~15-rule descent into a
-      single operator-precedence loop
-- [ ] Emit the *same* node structure as the chain grammar (binary-expr nodes with operator + operands)
-      so queries/AST/highlighting and the corpus round-trip are unchanged
-- [ ] Gate with the lossless corpus + node-count checks; target closing the Rust gap from ~2x toward parity
-- [ ] Fall back to plain rule descent for grammars without precedence annotations
+### 15.F — Reduce expression-chain parser overhead 🟡 (partial)
+> **Measured finding:** SemTree is *faster* than tree-sitter on flat grammars (JSON 2.6x, CSS 3.2x)
+> and slower on grammars with **expression precedence chains** (Rust ~1.7x). The runtime parser
+> descends ~15 chain rules per expression (`Expression → AssignExpr → RangeExpr → OrExpr → …`), and
+> the per-rule bookkeeping — not allocation — is the bulk of the remaining gap.
+- [x] Skip the `in_progress` left-recursion guard for rules that provably can't left-recurse
+      (conservative left-corner analysis, `compute_left_recursive`), removing 3 hash-set ops per rule
+      on right-recursive/chain grammars. Backstopped by MAX_DEPTH and the full test + corpus suite.
+- [ ] Full precedence-climbing (Pratt) loop driven by `Prec`/`PrecLeft`/`PrecRight` IR annotations —
+      would collapse the ~15-rule descent to one loop and close the Rust gap toward parity, but the
+      shipped grammars encode precedence via explicit chain *rules* (not `prec`), so this needs either
+      grammar rewrites or an auto-chain-detection pass; it must emit identical node structure. Deferred
+      as a larger, correctness-sensitive effort.
 
-**Note:** this is a substantial, correctness-sensitive parser change (must reproduce identical trees).
-It should be its own reviewed effort. Alternatively, ~2x on Rust with wins on JSON/CSS and parity on
-JS may be an acceptable stopping point given the toolchain differentiators.
+> **Result (15.F partial):** skipping the guard moved **JavaScript and Python to parity** with
+> tree-sitter (1 MB: JS 1.06x slower → 1.01x faster; Python 1.07x → 1.03x) and cut **Rust from ~1.93x
+> → ~1.70x** slower, while JSON/CSS got even faster (2.7x / 3.3x). All 200+ tests still pass. The
+> residual Rust gap needs the full Pratt loop above.
+
 
 
 ### 15.E — Parser scaling: sparse memo (fixes the 1 MB cliff) ✅

@@ -278,6 +278,102 @@ fn is_collapsible_shape(expr: &RuleExpr) -> bool {
     }
 }
 
+/// Whether an expression can match the empty string. Conservative: when the
+/// nullability of a sub-rule is unknown it is treated as non-nullable only for
+/// consuming constructs, which keeps `collect_left_corner` an over-approximation
+/// (so any genuinely left-recursive rule is still detected).
+fn expr_nullable(expr: &RuleExpr, first_sets: &FxHashMap<SmolStr, FirstSet>) -> bool {
+    match expr {
+        RuleExpr::Blank | RuleExpr::Optional(_) | RuleExpr::Repeat(_) => true,
+        RuleExpr::Literal(_) => false,
+        RuleExpr::RuleRef(name) => first_sets.get(name).map(|f| f.can_be_empty).unwrap_or(false),
+        RuleExpr::Seq(parts) => parts.iter().all(|p| expr_nullable(p, first_sets)),
+        RuleExpr::Choice(alts) => alts.iter().any(|a| expr_nullable(a, first_sets)),
+        RuleExpr::Repeat1(inner)
+        | RuleExpr::Field(_, inner)
+        | RuleExpr::Token(inner)
+        | RuleExpr::Prec(_, inner)
+        | RuleExpr::PrecLeft(_, inner)
+        | RuleExpr::PrecRight(_, inner) => expr_nullable(inner, first_sets),
+    }
+}
+
+/// Collect the "left corner" of an expression: rules that can appear as the
+/// first matched symbol (before consuming any token). Used for left-recursion
+/// detection.
+fn collect_left_corner(
+    expr: &RuleExpr,
+    first_sets: &FxHashMap<SmolStr, FirstSet>,
+    out: &mut FxHashSet<SmolStr>,
+) {
+    match expr {
+        RuleExpr::RuleRef(name) => {
+            out.insert(name.clone());
+        }
+        RuleExpr::Seq(parts) => {
+            for p in parts {
+                collect_left_corner(p, first_sets, out);
+                if !expr_nullable(p, first_sets) {
+                    break;
+                }
+            }
+        }
+        RuleExpr::Choice(alts) => {
+            for a in alts {
+                collect_left_corner(a, first_sets, out);
+            }
+        }
+        RuleExpr::Optional(inner)
+        | RuleExpr::Repeat(inner)
+        | RuleExpr::Repeat1(inner)
+        | RuleExpr::Field(_, inner)
+        | RuleExpr::Token(inner)
+        | RuleExpr::Prec(_, inner)
+        | RuleExpr::PrecLeft(_, inner)
+        | RuleExpr::PrecRight(_, inner) => collect_left_corner(inner, first_sets, out),
+        RuleExpr::Literal(_) | RuleExpr::Blank => {}
+    }
+}
+
+/// Compute the set of rules that can (directly or indirectly) left-recurse.
+/// Only these need the `in_progress` guard during parsing; skipping it for the
+/// rest avoids hash-set churn on the common right-recursive / precedence-chain
+/// grammars. Over-approximates (never misses a real left-recursion), and the
+/// MAX_DEPTH guard remains a backstop.
+fn compute_left_recursive(
+    grammar: &Grammar,
+    first_sets: &FxHashMap<SmolStr, FirstSet>,
+) -> FxHashSet<SmolStr> {
+    let mut left_corner: FxHashMap<SmolStr, FxHashSet<SmolStr>> = FxHashMap::default();
+    for (name, rule) in &grammar.rules {
+        let mut lc = FxHashSet::default();
+        collect_left_corner(&rule.expr, first_sets, &mut lc);
+        left_corner.insert(name.clone(), lc);
+    }
+
+    let mut result = FxHashSet::default();
+    for name in grammar.rules.keys() {
+        let mut visited: FxHashSet<SmolStr> = FxHashSet::default();
+        let mut stack: Vec<SmolStr> = left_corner
+            .get(name)
+            .map(|s| s.iter().cloned().collect())
+            .unwrap_or_default();
+        while let Some(cur) = stack.pop() {
+            if &cur == name {
+                result.insert(name.clone());
+                break;
+            }
+            if !visited.insert(cur.clone()) {
+                continue;
+            }
+            if let Some(next) = left_corner.get(&cur) {
+                stack.extend(next.iter().cloned());
+            }
+        }
+    }
+    result
+}
+
 /// Per-rule data indexed by rule_idx (u16) for O(1) access.
 struct RuleData {
     name: SmolStr,
@@ -286,6 +382,9 @@ struct RuleData {
     /// Collapse this rule's node when it produced a single child node (elides
     /// empty precedence-chain links). See `is_collapsible_shape`.
     collapse_single_child: bool,
+    /// Whether this rule can left-recurse. Only these need the `in_progress`
+    /// guard; skipping it elsewhere avoids per-rule hash-set churn.
+    may_left_recur: bool,
     syntax_kind: SyntaxKind,
 }
 
@@ -756,6 +855,9 @@ impl RuntimeParser {
             collapsible_set.remove(entry);
         }
 
+        // Rules that can left-recurse need the in_progress guard; others skip it.
+        let left_recursive = compute_left_recursive(&grammar, &first_sets);
+
         // Build indexed rule data and expression pointers.
         let num_rules = rule_indices.len();
         let mut rule_data = Vec::with_capacity(num_rules);
@@ -766,6 +868,7 @@ impl RuntimeParser {
             first_set: FirstSet::default(),
             is_transparent: false,
             collapse_single_child: false,
+            may_left_recur: true,
             syntax_kind: SyntaxKind::ERROR,
         });
         for (name, &idx) in &rule_indices {
@@ -778,6 +881,7 @@ impl RuntimeParser {
             rule_data[i].is_transparent = transparent_set.contains(name);
             rule_data[i].collapse_single_child =
                 collapsible_set.contains(name) && !transparent_set.contains(name);
+            rule_data[i].may_left_recur = left_recursive.contains(name);
             rule_data[i].syntax_kind = rule_name_to_kind(name);
             if let Some(rule) = grammar.rules.get(name) {
                 rule_expr_ptrs[i] = &rule.expr as *const RuleExpr;
@@ -1312,16 +1416,19 @@ impl<'a> ParseContext<'a> {
         }
 
         let pos = self.pos as u32;
+        let may_left_recur = rd.may_left_recur;
 
-        // Bitset checks — O(1).
+        // fail_cache is a cheap memo of known failures; in_progress is the
+        // left-recursion guard, needed only for rules that can left-recurse.
         if self.fail_cache_contains(rule_idx, pos) {
             return false;
         }
-        if self.in_progress_contains(rule_idx, pos) {
-            return false;
+        if may_left_recur {
+            if self.in_progress_contains(rule_idx, pos) {
+                return false;
+            }
+            self.in_progress_insert(rule_idx, pos);
         }
-
-        self.in_progress_insert(rule_idx, pos);
         self.depth += 1;
 
         let save_pos = self.pos;
@@ -1354,7 +1461,9 @@ impl<'a> ParseContext<'a> {
                 self.fail_cache_insert(rule_idx, pos);
             }
             self.depth -= 1;
-            self.in_progress_remove(rule_idx, pos);
+            if may_left_recur {
+                self.in_progress_remove(rule_idx, pos);
+            }
             return false;
         }
 
@@ -1366,7 +1475,9 @@ impl<'a> ParseContext<'a> {
             }
         }
         self.depth -= 1;
-        self.in_progress_remove(rule_idx, pos);
+        if may_left_recur {
+            self.in_progress_remove(rule_idx, pos);
+        }
         true
     }
 
