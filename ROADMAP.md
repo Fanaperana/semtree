@@ -385,9 +385,30 @@
 - [ ] Re-benchmark memory on a **non-repetitive** corpus (ties into 12.3) so the numbers are representative.
 
 > **Result (15.A partial):** structural sharing landed safely (correct, no cold-parse regression, real
-> heap savings on repetitive/incremental workloads). The double-allocation-per-node cost remains — the
-> per-node `Arc` + `Vec` layout still needs the DST/cstree change (deferred as a dedicated migration)
-> to close the constant-factor gap on Python/Rust.
+> heap savings on repetitive/incremental workloads, and a net cold-parse win — turning dedup off is
+> slower everywhere). **Measured:** with dedup off (allocation-heavy) Rust is 2.08x slower vs 1.93x
+> with dedup on, so the per-node `Arc`+`Vec` allocation is only ~10–15% of the remaining gap. The
+> full DST/cstree layout change is therefore **low-ROI** for the current gap and is deprioritized;
+> the dominant cost is parser CPU (see 15.F).
+
+### 15.F — Precedence-climbing expression parsing (the real remaining lever) 🔜
+> **Measured finding:** SemTree is *faster* than tree-sitter on flat grammars (JSON 2.4x, CSS 3.1x)
+> and slower on exactly the grammars with **expression precedence chains** (Rust ~2x, JS/Python
+> ~1.1x). The runtime parser literally descends ~15 chain rules per expression
+> (`Expression → AssignExpr → RangeExpr → OrExpr → … → primary`), even for a bare literal. That
+> per-expression rule-call overhead — not allocation — is the bulk of the remaining gap.
+- [ ] Use the Grammar IR's existing `Prec`/`PrecLeft`/`PrecRight` annotations to drive a
+      precedence-climbing (Pratt) loop in the runtime parser, collapsing the ~15-rule descent into a
+      single operator-precedence loop
+- [ ] Emit the *same* node structure as the chain grammar (binary-expr nodes with operator + operands)
+      so queries/AST/highlighting and the corpus round-trip are unchanged
+- [ ] Gate with the lossless corpus + node-count checks; target closing the Rust gap from ~2x toward parity
+- [ ] Fall back to plain rule descent for grammars without precedence annotations
+
+**Note:** this is a substantial, correctness-sensitive parser change (must reproduce identical trees).
+It should be its own reviewed effort. Alternatively, ~2x on Rust with wins on JSON/CSS and parity on
+JS may be an acceptable stopping point given the toolchain differentiators.
+
 
 ### 15.E — Parser scaling: sparse memo (fixes the 1 MB cliff) ✅
 - [x] Replaced the packrat memo **bitsets** (`in_progress` + `fail_cache`, a fixed `num_rules × token_count` array = ~10–26 MB per parse) with sparse `FxHashSet`s. The dense bitset scattered accesses across tens of MB and cache-thrashed at scale; the sparse set keeps the active working set cache-resident while preserving identical memoization semantics.
