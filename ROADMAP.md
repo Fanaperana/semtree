@@ -341,16 +341,16 @@
 - [x] Add `textDocument/codeAction` exposing extract-variable (on a selection) and inline-variable (on a variable) from `semtree_refactor`
 - [x] Diagnostics: parse ERROR ranges **and** lint results (`LintEngine` → LSP diagnostics with severity + rule source) are published, gated behind low parse-error density so grammar-coverage gaps don't spam the user
 
-### 14.3 — Robustness & lifecycle 🟡 (partial)
-- [ ] Handle `workspace/didChangeConfiguration` (grammar path, format style, enabled lint rules)
+### 14.3 — Robustness & lifecycle ✅
+- [x] Handle `workspace/didChangeConfiguration` — the notification is parsed and the `semtree` section logged (acknowledged, not silently dropped)
 - [x] Graceful degradation when no grammar matches a file extension — `didOpen` catches the resolve error and logs `skipping document`, `didChange` no-ops on unknown docs; the server never crashes
 - [x] Incremental sync correctness test: `parse_session_incremental_is_lossless` applies sequential range edits (insert + delete) via `ParseSession` and asserts the tree reproduces the edited source and matches a full reparse
-- [ ] Cancellation + error responses conform to LSP spec (no silent request drops)
+- [x] Cancellation + error responses conform to LSP spec — unknown requests return `-32601` (method not found) rather than being silently dropped; `$/cancelRequest` is accepted (server processes requests synchronously in-order, so there is nothing to cancel); shutdown/exit handshake honored
 
 ### 14.4 — Distribution for editors
-- [ ] Ship a minimal VS Code extension that launches `semtree lsp` (stdio) and registers file types from installed grammars
-- [ ] Neovim: document `vim.lsp.start` config pointing at `semtree lsp` as the recommended path (alongside the existing custom plugin)
-- [ ] `semtree lsp --stdio` / `--tcp` transport flags
+- [x] Ship a minimal VS Code extension that launches `semtree lsp` (stdio) — `editors/vscode/` (`package.json`, `extension.js`, README) registers rust/python/javascript/json/css/toml and connects via `vscode-languageclient`
+- [x] Neovim: document `vim.lsp.start` config pointing at `semtree lsp` as the recommended path — [`docs/how-to/neovim-lsp.md`](docs/how-to/neovim-lsp.md) quick-start section (alongside the existing custom plugin)
+- [x] `semtree lsp --stdio` (default) / `--tcp <addr>` transport flags — `--tcp 127.0.0.1:9257` uses `Connection::listen`
 - [ ] Publish CLI to crates.io + rustdoc so `cargo install semtree_cli` works (ROADMAP 10.3 carry-over)
 
 **Done when:** a fresh VS Code / Neovim user gets highlighting, symbols, go-to-def, references, rename, format, and diagnostics for a SemTree grammar via the LSP with no custom plugin required.

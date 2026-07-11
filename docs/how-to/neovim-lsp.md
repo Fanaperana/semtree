@@ -1,6 +1,70 @@
-# How to build a Neovim LSP for your language with SemTree
+# How to use SemTree as a Neovim language server
 
-**Goal:** give Neovim hover, diagnostics, and document symbols for a custom language — using SemTree as the parser.
+**Goal:** give Neovim semantic highlighting, diagnostics, symbols, rename, and
+refactorings — using SemTree as the parser and language server.
+
+There are two paths:
+
+1. **Built-in server (`semtree lsp`)** — zero code. Best if you use the shipped
+   grammars (rust, python, javascript, json, css, toml) or a workspace
+   `grammars/` folder. Start here.
+2. **Custom server** — a small Rust LSP that embeds or shells out to SemTree, for
+   bespoke languages or custom features. See [the walkthrough below](#custom-server-walkthrough).
+
+---
+
+## Quick start: the built-in server
+
+Install the binary and confirm it is on `PATH`:
+
+```bash
+cargo install --path crates/semtree_cli   # from the SemTree repo
+semtree --version
+```
+
+Wire it into Neovim (0.11+ `vim.lsp` API):
+
+```lua
+-- lua/plugins/semtree.lua (or anywhere in your config)
+local group = vim.api.nvim_create_augroup("semtree_lsp", { clear = true })
+
+vim.api.nvim_create_autocmd("FileType", {
+  group = group,
+  pattern = { "rust", "python", "javascript", "json", "css", "toml" },
+  callback = function(args)
+    vim.lsp.start({
+      name = "semtree",
+      cmd = { "semtree", "lsp" }, -- stdio transport
+      root_dir = vim.fs.root(args.buf, { "grammars", ".git", "Cargo.toml" }),
+    })
+  end,
+})
+```
+
+That's it. Open a supported file and try:
+
+- `:lua vim.lsp.buf.document_symbol()` — outline
+- `:lua vim.lsp.buf.rename()` — rename
+- `:lua vim.lsp.buf.code_action()` — extract / inline variable
+- Diagnostics appear inline (parse errors + lint)
+- Semantic tokens drive highlighting if `vim.lsp.semantic_tokens` is enabled
+  (default in recent Neovim)
+
+### TCP transport (optional)
+
+For debugging you can run the server on a socket instead of stdio:
+
+```bash
+semtree lsp --tcp 127.0.0.1:9257
+```
+
+```lua
+cmd = vim.lsp.rpc.connect("127.0.0.1", 9257),
+```
+
+---
+
+## Custom server walkthrough
 
 **Approach:** a small Rust language server that shells out to (or embeds) SemTree, speaking LSP over stdio. Neovim connects via `vim.lsp.start`.
 

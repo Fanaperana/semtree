@@ -40,8 +40,14 @@ struct DocumentState {
     errors: Vec<String>,
 }
 
-pub fn lsp(exe_dir: PathBuf) -> super::Result {
-    let (connection, io_threads) = Connection::stdio();
+pub fn lsp(exe_dir: PathBuf, tcp: Option<String>) -> super::Result {
+    let (connection, io_threads) = match tcp {
+        Some(addr) => {
+            eprintln!("semtree-lsp: listening on tcp {addr}");
+            Connection::listen(addr.as_str())?
+        }
+        None => Connection::stdio(),
+    };
     let caps = serde_json::to_value(server_capabilities())?;
     let init_params = match connection.initialize(caps) {
         Ok(params) => params,
@@ -513,6 +519,20 @@ fn handle_notification(
                 .extract("textDocument/didClose")
                 .map_err(|e| format!("{e:?}"))?;
             documents.remove(&uri_key(&params.text_document.uri));
+        }
+        "workspace/didChangeConfiguration" => {
+            let params: lsp_types::DidChangeConfigurationParams = notif
+                .extract("workspace/didChangeConfiguration")
+                .map_err(|e| format!("{e:?}"))?;
+            // Acknowledge the client's configuration. The `semtree` section may
+            // carry `serverPath` / `trace.server`; grammar resolution stays
+            // workspace-relative, so we log the change rather than silently
+            // dropping the notification.
+            if let Some(section) = params.settings.get("semtree") {
+                eprintln!("semtree-lsp: configuration updated: {section}");
+            } else {
+                eprintln!("semtree-lsp: configuration updated");
+            }
         }
         _ => {}
     }

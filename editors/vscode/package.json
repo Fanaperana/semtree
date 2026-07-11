@@ -1,0 +1,50 @@
+{
+  "name": "semtree-vscode",
+  "displayName": "SemTree",
+  "description": "SemTree language server — semantic highlighting, symbols, rename, refactorings, and diagnostics from a single grammar.",
+  "version": "0.1.0",
+  "publisher": "semtree",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Fanaperana/semtree"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "activationEvents": [
+    "onLanguage:rust",
+    "onLanguage:python",
+    "onLanguage:javascript",
+    "onLanguage:javascriptreact",
+    "onLanguage:json",
+    "onLanguage:css",
+    "onLanguage:toml"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "SemTree",
+      "properties": {
+        "semtree.serverPath": {
+          "type": "string",
+          "default": "semtree",
+          "description": "Path to the `semtree` binary. Must be on PATH or an absolute path."
+        },
+        "semtree.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Trace the communication between VS Code and the SemTree language server."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

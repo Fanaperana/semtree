@@ -92,8 +92,12 @@ enum Commands {
         file: PathBuf,
     },
 
-    /// Start LSP server (stdio) with incremental parsing
-    Lsp,
+    /// Start LSP server with incremental parsing (stdio by default)
+    Lsp {
+        /// Listen on a TCP address (e.g. 127.0.0.1:9257) instead of stdio
+        #[arg(long)]
+        tcp: Option<String>,
+    },
 
     Import {
         file: PathBuf,
@@ -155,7 +159,7 @@ fn main() {
             iterations,
         } => commands::parity(grammar, file, lines, iterations, &exe_dir()),
         Commands::Debug { grammar, file } => commands::debug(grammar, file, &exe_dir()),
-        Commands::Lsp => commands::lsp(exe_dir()),
+        Commands::Lsp { tcp } => commands::lsp(exe_dir(), tcp),
         Commands::Import { file, output } => commands::import(file, output),
         Commands::Doctor => commands::doctor(),
         Commands::Generate { file, output } => commands::generate(file, output),
