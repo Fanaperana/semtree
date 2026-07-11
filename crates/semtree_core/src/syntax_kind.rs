@@ -28,6 +28,8 @@ impl SyntaxKind {
     pub const BOOL_LIT: Self = Self(15);
 
     // ── Punctuation ───────────────────────────────────────────
+    /// Generic punctuation/delimiter used when a specific kind isn't mapped.
+    pub const PUNCT: Self = Self(29);
     pub const LPAREN: Self = Self(30);
     pub const RPAREN: Self = Self(31);
     pub const LBRACE: Self = Self(32);
@@ -103,6 +105,9 @@ impl SyntaxKind {
     pub const KW_LOOP: Self = Self(126);
     pub const KW_BREAK: Self = Self(127);
     pub const KW_CONTINUE: Self = Self(128);
+    /// Generic keyword for grammar-declared keywords without a specific `KW_*`
+    /// kind. In the `is_keyword` range (100..200).
+    pub const KEYWORD: Self = Self(199);
 
     // ── Composite Nodes ───────────────────────────────────────
     pub const SOURCE_FILE: Self = Self(256);

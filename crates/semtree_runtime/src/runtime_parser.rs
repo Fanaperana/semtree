@@ -1233,8 +1233,16 @@ impl<'a> ParseContext<'a> {
 
     fn token_to_syntax_kind(&self, tok: &RawToken) -> SyntaxKind {
         match tok.kind {
-            RuntimeTokenKind::Keyword(_) => SyntaxKind::IDENT,
-            RuntimeTokenKind::Literal(_) => SyntaxKind::IDENT,
+            RuntimeTokenKind::Keyword(_) => SyntaxKind::KEYWORD,
+            RuntimeTokenKind::Literal(_) => {
+                let text = tok.text(self.source);
+                // Bare-word literals used directly in rules (e.g. `"true"`) act
+                // like keywords; symbolic literals map to punctuation/operators.
+                match text.chars().next() {
+                    Some(c) if c.is_alphabetic() || c == '_' => SyntaxKind::KEYWORD,
+                    _ => punct_kind(text),
+                }
+            }
             RuntimeTokenKind::Ident => SyntaxKind::IDENT,
             RuntimeTokenKind::Integer => SyntaxKind::INT_LIT,
             RuntimeTokenKind::Float => SyntaxKind::FLOAT_LIT,
@@ -1945,4 +1953,56 @@ pub fn rule_name_to_kind(name: &str) -> SyntaxKind {
         hash += 4096;
     }
     SyntaxKind(hash)
+}
+
+/// Map a symbolic literal (operator / punctuation) to its specific `SyntaxKind`
+/// so downstream consumers (semantic highlighting, IDE) can classify it. Unknown
+/// symbols fall back to the generic `PUNCT` kind.
+fn punct_kind(text: &str) -> SyntaxKind {
+    use SyntaxKind as K;
+    match text {
+        "(" => K::LPAREN,
+        ")" => K::RPAREN,
+        "{" => K::LBRACE,
+        "}" => K::RBRACE,
+        "[" => K::LBRACKET,
+        "]" => K::RBRACKET,
+        ";" => K::SEMICOLON,
+        ":" => K::COLON,
+        "," => K::COMMA,
+        "." => K::DOT,
+        ".." => K::DOTDOT,
+        "->" => K::ARROW,
+        "=>" => K::FAT_ARROW,
+        "::" => K::COLONCOLON,
+        "#" => K::HASH,
+        "@" => K::AT,
+        "?" => K::QUESTION,
+        "+" => K::PLUS,
+        "-" => K::MINUS,
+        "*" => K::STAR,
+        "/" => K::SLASH,
+        "%" => K::PERCENT,
+        "&" => K::AMP,
+        "|" => K::PIPE,
+        "^" => K::CARET,
+        "~" => K::TILDE,
+        "!" => K::BANG,
+        "<" => K::LT,
+        ">" => K::GT,
+        "=" => K::EQ,
+        "==" => K::EQEQ,
+        "!=" => K::NEQ,
+        "<=" => K::LTEQ,
+        ">=" => K::GTEQ,
+        "&&" => K::AMPAMP,
+        "||" => K::PIPEPIPE,
+        "+=" => K::PLUSEQ,
+        "-=" => K::MINUSEQ,
+        "*=" => K::STAREQ,
+        "/=" => K::SLASHEQ,
+        "<<" => K::SHL,
+        ">>" => K::SHR,
+        _ => K::PUNCT,
+    }
 }

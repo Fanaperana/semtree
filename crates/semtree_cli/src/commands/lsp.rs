@@ -8,19 +8,25 @@ use std::path::{Path, PathBuf};
 use lsp_server::{Connection, Message, Notification, Request, Response};
 use lsp_types::{
     CompletionItem as LspCompletionItem, CompletionOptions, CompletionParams, CompletionResponse,
-    Diagnostic, DiagnosticSeverity, DocumentFormattingParams, DocumentSymbol, DocumentSymbolParams,
+    Diagnostic, DiagnosticSeverity, DocumentFormattingParams, DocumentHighlight,
+    DocumentHighlightKind, DocumentHighlightParams, DocumentSymbol, DocumentSymbolParams,
     DocumentSymbolResponse, FoldingRange as LspFoldingRange, FoldingRangeKind, FoldingRangeParams,
     FoldingRangeProviderCapability, GotoDefinitionParams, GotoDefinitionResponse, Hover,
     HoverContents, HoverParams, HoverProviderCapability, Location, MarkupContent, MarkupKind,
-    OneOf, Position, Range, ReferenceParams, SemanticTokens, SemanticTokensParams,
-    SemanticTokensResult, ServerCapabilities, SymbolKind, TextDocumentSyncCapability,
-    TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri,
+    OneOf, Position, PrepareRenameResponse, Range, ReferenceParams, RenameOptions, RenameParams,
+    SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokens,
+    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensOptions,
+    SemanticTokensParams, SemanticTokensResult, SemanticTokensServerCapabilities,
+    ServerCapabilities, SymbolKind, TextDocumentPositionParams, TextDocumentSyncCapability,
+    TextDocumentSyncKind, TextDocumentSyncOptions, TextEdit, Uri, WorkspaceEdit,
 };
+use semtree_core::SyntaxKind;
 use semtree_ide::{
-    complete_at as ide_complete, document_symbols as ide_symbols,
-    find_references as ide_references, folding_ranges as ide_fold, goto_definition as ide_goto_def,
-    hover_info as ide_hover,
+    classify_tokens as ide_classify_tokens, complete_at as ide_complete,
+    document_symbols as ide_symbols, find_references as ide_references, folding_ranges as ide_fold,
+    goto_definition as ide_goto_def, hover_info as ide_hover,
 };
+use text_size::TextSize;
 use semtree_runtime::{ParseSession, ParserBackend};
 use semtree_semantic::SemanticModel;
 
@@ -102,13 +108,79 @@ fn server_capabilities() -> ServerCapabilities {
         hover_provider: Some(HoverProviderCapability::Simple(true)),
         definition_provider: Some(OneOf::Left(true)),
         references_provider: Some(OneOf::Left(true)),
+        document_highlight_provider: Some(OneOf::Left(true)),
+        rename_provider: Some(OneOf::Right(RenameOptions {
+            prepare_provider: Some(true),
+            work_done_progress_options: Default::default(),
+        })),
         document_formatting_provider: Some(OneOf::Left(true)),
         folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
-        // Semantic tokens disabled: the runtime parser currently emits all
-        // tokens as generic `identifier` kind, which produces incorrect
-        // classification that overrides the editor's native highlighting.
-        // TODO: re-enable once the runtime lexer distinguishes keyword/operator/literal kinds.
+        semantic_tokens_provider: Some(
+            SemanticTokensServerCapabilities::SemanticTokensOptions(SemanticTokensOptions {
+                legend: SemanticTokensLegend {
+                    token_types: semantic_token_type_legend(),
+                    token_modifiers: semantic_token_modifier_legend(),
+                },
+                full: Some(SemanticTokensFullOptions::Bool(true)),
+                range: Some(false),
+                ..Default::default()
+            }),
+        ),
         ..Default::default()
+    }
+}
+
+/// Ordered list of semantic token types; the index into this list is what the
+/// LSP wire protocol uses. Must match `ide_token_type_index`.
+fn semantic_token_type_legend() -> Vec<SemanticTokenType> {
+    vec![
+        SemanticTokenType::KEYWORD,
+        SemanticTokenType::TYPE,
+        SemanticTokenType::FUNCTION,
+        SemanticTokenType::VARIABLE,
+        SemanticTokenType::PARAMETER,
+        SemanticTokenType::PROPERTY,
+        SemanticTokenType::ENUM,
+        SemanticTokenType::STRING,
+        SemanticTokenType::NUMBER,
+        SemanticTokenType::COMMENT,
+        SemanticTokenType::OPERATOR,
+    ]
+}
+
+/// Ordered list of semantic token modifiers (index = bit position). Must match
+/// `ide_modifier_bit`.
+fn semantic_token_modifier_legend() -> Vec<SemanticTokenModifier> {
+    vec![
+        SemanticTokenModifier::DECLARATION,
+        SemanticTokenModifier::DEFINITION,
+        SemanticTokenModifier::READONLY,
+    ]
+}
+
+fn ide_token_type_index(t: semtree_ide::SemanticTokenType) -> u32 {
+    use semtree_ide::SemanticTokenType as T;
+    match t {
+        T::Keyword => 0,
+        T::Type => 1,
+        T::Function => 2,
+        T::Variable => 3,
+        T::Parameter => 4,
+        T::Property => 5,
+        T::Enum => 6,
+        T::String => 7,
+        T::Number => 8,
+        T::Comment => 9,
+        T::Operator => 10,
+    }
+}
+
+fn ide_modifier_bit(m: semtree_ide::SemanticTokenModifier) -> u32 {
+    use semtree_ide::SemanticTokenModifier as M;
+    match m {
+        M::Declaration => 1 << 0,
+        M::Definition => 1 << 1,
+        M::Readonly => 1 << 2,
     }
 }
 
@@ -232,18 +304,64 @@ fn handle_request(
                 .sender
                 .send(Message::Response(Response::new_ok(id, refs)))?;
         }
+        "textDocument/documentHighlight" => {
+            let (id, params): (_, DocumentHighlightParams) =
+                match req.extract("textDocument/documentHighlight") {
+                    Ok(v) => v,
+                    Err(e) => return Err(format!("{e:?}").into()),
+                };
+            let uri = params
+                .text_document_position_params
+                .text_document
+                .uri
+                .clone();
+            let key = uri_key(&uri);
+            let hls: Vec<DocumentHighlight> = documents
+                .get(&key)
+                .map(|doc| {
+                    let offset = position_to_offset(
+                        doc.session.source(),
+                        params.text_document_position_params.position,
+                    );
+                    let Some(root) = doc.session.syntax() else {
+                        return vec![];
+                    };
+                    let model = SemanticModel::analyze(root);
+                    ide_references(root, &model, offset)
+                        .into_iter()
+                        .map(|range| DocumentHighlight {
+                            range: Range {
+                                start: byte_to_position(
+                                    doc.session.source(),
+                                    u32::from(range.start()),
+                                ),
+                                end: byte_to_position(doc.session.source(), u32::from(range.end())),
+                            },
+                            kind: Some(DocumentHighlightKind::TEXT),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            connection
+                .sender
+                .send(Message::Response(Response::new_ok(id, hls)))?;
+        }
         "textDocument/semanticTokens/full" => {
-            // Semantic tokens disabled — runtime parser doesn't distinguish token kinds yet.
-            let (id, _params): (_, SemanticTokensParams) =
+            let (id, params): (_, SemanticTokensParams) =
                 match req.extract("textDocument/semanticTokens/full") {
                     Ok(v) => v,
                     Err(e) => return Err(format!("{e:?}").into()),
                 };
+            let key = uri_key(&params.text_document.uri);
+            let data = documents
+                .get(&key)
+                .map(semantic_tokens_for_doc)
+                .unwrap_or_default();
             connection.sender.send(Message::Response(Response::new_ok(
                 id,
                 SemanticTokensResult::Tokens(SemanticTokens {
                     result_id: None,
-                    data: vec![],
+                    data,
                 }),
             )))?;
         }
@@ -270,6 +388,48 @@ fn handle_request(
             connection
                 .sender
                 .send(Message::Response(Response::new_ok(id, ranges)))?;
+        }
+        "textDocument/prepareRename" => {
+            let (id, params): (_, TextDocumentPositionParams) =
+                match req.extract("textDocument/prepareRename") {
+                    Ok(v) => v,
+                    Err(e) => return Err(format!("{e:?}").into()),
+                };
+            let key = uri_key(&params.text_document.uri);
+            let resp = documents
+                .get(&key)
+                .and_then(|doc| {
+                    let offset = position_to_offset(doc.session.source(), params.position);
+                    prepare_rename_range(doc, offset)
+                })
+                .map(PrepareRenameResponse::Range);
+            connection
+                .sender
+                .send(Message::Response(Response::new_ok(id, resp)))?;
+        }
+        "textDocument/rename" => {
+            let (id, params): (_, RenameParams) = match req.extract("textDocument/rename") {
+                Ok(v) => v,
+                Err(e) => return Err(format!("{e:?}").into()),
+            };
+            let uri = params.text_document_position.text_document.uri.clone();
+            let key = uri_key(&uri);
+            let ws = documents.get(&key).map(|doc| {
+                let offset = position_to_offset(
+                    doc.session.source(),
+                    params.text_document_position.position,
+                );
+                let edits = rename_edits_for_doc(doc, offset, &params.new_name);
+                let mut changes = HashMap::new();
+                changes.insert(uri.clone(), edits);
+                WorkspaceEdit {
+                    changes: Some(changes),
+                    ..Default::default()
+                }
+            });
+            connection
+                .sender
+                .send(Message::Response(Response::new_ok(id, ws)))?;
         }
         _ => {
             connection.sender.send(Message::Response(Response::new_err(
@@ -428,7 +588,7 @@ fn publish_diagnostics(
 
     // If more than 10% of lines have errors, suppress all diagnostics —
     // these are grammar coverage gaps, not user mistakes.
-    let diags: Vec<Diagnostic> = if error_density > 0.1 {
+    let mut diags: Vec<Diagnostic> = if error_density > 0.1 {
         vec![]
     } else {
         doc.errors
@@ -450,6 +610,30 @@ fn publish_diagnostics(
             })
             .collect()
     };
+
+    // On a well-covered parse (few parse errors), also surface lint diagnostics.
+    if error_density <= 0.1 {
+        if let Some(root) = doc.session.syntax() {
+            let model = SemanticModel::analyze(root);
+            let lints = semtree_lint::LintEngine::with_defaults().lint(root, &model);
+            for d in lints.diagnostics {
+                diags.push(Diagnostic {
+                    range: Range {
+                        start: byte_to_position(source, u32::from(d.range.start())),
+                        end: byte_to_position(source, u32::from(d.range.end())),
+                    },
+                    severity: Some(match d.severity {
+                        semtree_lint::LintSeverity::Error => DiagnosticSeverity::ERROR,
+                        semtree_lint::LintSeverity::Warning => DiagnosticSeverity::WARNING,
+                        semtree_lint::LintSeverity::Info => DiagnosticSeverity::INFORMATION,
+                    }),
+                    message: d.message,
+                    source: Some(format!("semtree({})", d.rule)),
+                    ..Default::default()
+                });
+            }
+        }
+    }
 
     connection.sender.send(Message::Notification(Notification {
         method: "textDocument/publishDiagnostics".into(),
@@ -491,6 +675,87 @@ fn byte_offset_to_position(source: &str, offset: usize) -> Position {
 }
 
 #[allow(deprecated)]
+/// The identifier range at `offset`, if a rename can start there.
+fn prepare_rename_range(doc: &DocumentState, offset: u32) -> Option<Range> {
+    let root = doc.session.syntax()?;
+    let tok = root.token_at_offset(TextSize::new(offset))?;
+    if tok.kind() != SyntaxKind::IDENT {
+        return None;
+    }
+    let r = tok.text_range();
+    let src = doc.session.source();
+    Some(Range {
+        start: byte_to_position(src, u32::from(r.start())),
+        end: byte_to_position(src, u32::from(r.end())),
+    })
+}
+
+/// Compute the LSP text edits to rename the symbol at `offset` to `new_name`.
+fn rename_edits_for_doc(doc: &DocumentState, offset: u32, new_name: &str) -> Vec<TextEdit> {
+    let Some(root) = doc.session.syntax() else {
+        return vec![];
+    };
+    let model = SemanticModel::analyze(root);
+    let src = doc.session.source();
+    semtree_refactor::rename_symbol(root, &model, offset, new_name)
+        .into_iter()
+        .map(|e| TextEdit {
+            range: Range {
+                start: byte_to_position(src, u32::from(e.range.start())),
+                end: byte_to_position(src, u32::from(e.range.end())),
+            },
+            new_text: e.new_text,
+        })
+        .collect()
+}
+
+/// Build LSP-encoded semantic tokens (delta-encoded per the spec) for a document.
+fn semantic_tokens_for_doc(doc: &DocumentState) -> Vec<SemanticToken> {
+    let Some(root) = doc.session.syntax() else {
+        return vec![];
+    };
+    let model = SemanticModel::analyze(root);
+    let mut classified = ide_classify_tokens(root, &model);
+    classified.sort_by_key(|t| t.range.start());
+
+    let src = doc.session.source();
+    let mut data = Vec::with_capacity(classified.len());
+    let mut prev_line = 0u32;
+    let mut prev_start = 0u32;
+    for t in classified {
+        let pos = byte_to_position(src, u32::from(t.range.start()));
+        let end = byte_to_position(src, u32::from(t.range.end()));
+        // LSP semantic tokens must be single-line; skip multi-line tokens.
+        if end.line != pos.line {
+            continue;
+        }
+        let length = end.character.saturating_sub(pos.character);
+        if length == 0 {
+            continue;
+        }
+        let delta_line = pos.line - prev_line;
+        let delta_start = if delta_line == 0 {
+            pos.character - prev_start
+        } else {
+            pos.character
+        };
+        let mut modifiers = 0u32;
+        for m in &t.modifiers {
+            modifiers |= ide_modifier_bit(*m);
+        }
+        data.push(SemanticToken {
+            delta_line,
+            delta_start,
+            length,
+            token_type: ide_token_type_index(t.token_type),
+            token_modifiers_bitset: modifiers,
+        });
+        prev_line = pos.line;
+        prev_start = pos.character;
+    }
+    data
+}
+
 fn symbols_for_doc(doc: &DocumentState) -> Vec<DocumentSymbol> {
     let Some(root) = doc.session.syntax() else {
         return vec![];

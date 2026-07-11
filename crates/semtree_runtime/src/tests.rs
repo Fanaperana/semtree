@@ -32,6 +32,47 @@ StringLit :=
     parse_semtree_dsl(src).unwrap()
 }
 
+#[test]
+fn runtime_parser_tags_token_kinds() {
+    use semtree_core::SyntaxKind;
+    use semtree_red::SyntaxElement;
+
+    let parser = RuntimeParser::new(simple_grammar());
+    let result = parser.parse("fn main() { let x = 42; }");
+    let root = result.syntax();
+
+    let mut nodes = root.descendants();
+    nodes.push(root.clone());
+    let (mut kw, mut lparen, mut int) = (false, false, false);
+    for n in &nodes {
+        for el in n.children_with_tokens() {
+            if let SyntaxElement::Token(t) = el {
+                match t.text() {
+                    "fn" | "let" => {
+                        assert!(
+                            t.kind().is_keyword(),
+                            "'{}' should be a keyword kind, got {:?}",
+                            t.text(),
+                            t.kind()
+                        );
+                        kw = true;
+                    }
+                    "(" => {
+                        assert_eq!(t.kind(), SyntaxKind::LPAREN);
+                        lparen = true;
+                    }
+                    "42" => {
+                        assert_eq!(t.kind(), SyntaxKind::INT_LIT);
+                        int = true;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    assert!(kw && lparen && int, "kw={kw} lparen={lparen} int={int}");
+}
+
 // ── Runtime Lexer Tests ─────────────────────────────────────
 
 #[test]
